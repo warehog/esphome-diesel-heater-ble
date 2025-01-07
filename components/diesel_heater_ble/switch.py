@@ -2,11 +2,11 @@ import esphome.codegen as cg
 from esphome.components import switch
 import esphome.config_validation as cv
 
-from . import CONF_HEATER_ID, DieselHeaterBLE, diesel_heater_ble_ns
+from . import CONF_DIESEL_HEATER_BLE, DieselHeaterBLE, diesel_heater_ble_ns
 
 CONFIG_SCHEMA = cv.Schema(
     {
-        cv.GenerateID(CONF_HEATER_ID): cv.use_id(DieselHeaterBLE),
+        cv.GenerateID(CONF_DIESEL_HEATER_BLE): cv.use_id(DieselHeaterBLE),
         cv.Optional("power"): switch.switch_schema(
             diesel_heater_ble_ns.class_("PowerSwitch", switch.Switch),
             icon="mdi:power",
@@ -16,7 +16,7 @@ CONFIG_SCHEMA = cv.Schema(
 
 
 async def to_code(config):
-    parent = await cg.get_variable(config[CONF_HEATER_ID])
+    parent = await cg.get_variable(config[CONF_DIESEL_HEATER_BLE])
 
     for switch_type in ["power"]:
         if conf := config.get(switch_type):
