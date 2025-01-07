@@ -16,7 +16,7 @@ SetTempNumber = diesel_heater_ble_ns.class_("SetTempNumber", number.Number)
 
 CONFIG_SCHEMA = cv.Schema(
     {
-        cv.GenerateID(CONF_HEATER_ID): cv.use_id(DieselHeaterBLE),
+        cv.GenerateID(CONF_DIESEL_HEATER_BLE): cv.use_id(DieselHeaterBLE),
         cv.Optional(CONF_POWER_LEVEL): number.number_schema(PowerLevelNumber),
         cv.Optional(CONF_SET_TEMP): number.number_schema(SetTempNumber),
     }
@@ -24,7 +24,7 @@ CONFIG_SCHEMA = cv.Schema(
 
 
 async def to_code(config):
-    parent = await cg.get_variable(config[CONF_HEATER_ID])
+    parent = await cg.get_variable(config[CONF_DIESEL_HEATER_BLE])
 
     # CONF_POWER_LEVEL
     if conf := config.get(CONF_POWER_LEVEL):
