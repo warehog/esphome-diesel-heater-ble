@@ -2,7 +2,7 @@ import esphome.codegen as cg
 from esphome.components import number
 import esphome.config_validation as cv
 
-from . import CONF_HEATER_ID, DieselHeaterBLE, diesel_heater_ble_ns
+from . import CONF_DIESEL_HEATER_BLE, DieselHeaterBLE, diesel_heater_ble_ns
 
 CODEOWNERS = ["@warehog"]
 DEPENDENCIES = ["diesel_heater_ble"]
