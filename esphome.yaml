@@ -1,0 +1,130 @@
+esphome:
+  name: heater-adapter-ble
+
+esp32:
+  board: lolin32_lite
+  variant: esp32
+  framework:
+    type: esp-idf
+    # type: arduino # would not fit in 4MB FLASH memory
+
+# Enable logging
+logger:
+
+wifi:
+  networks:
+    - ssid: <ssid>
+      password: <password>
+
+external_components:
+  - source: github://warehog/esphome-diesel-heater-ble@main
+    refresh: 0s
+    components: [diesel_heater_ble]
+
+esp32_ble_tracker:
+
+ble_client:
+  id: ble_client_id
+  mac_address: E0:4E:7A:89:68:D6
+
+diesel_heater_ble:
+  ble_client_id: ble_client_id
+
+sensor:
+  platform: diesel_heater_ble
+  running_state:
+    name: "Running State"
+    id: running_state
+  error_code:
+    name: "Error Code"
+    id: error_code
+  running_step:
+    name: "Running Step"
+    id: running_step
+  altitude:
+    name: "Altitude"
+    id: altitude
+  running_mode:
+    name: "Running Mode"
+    id: running_mode
+  set_level:
+    name: "Set Level"
+    id: set_level
+  set_temp:
+    name: "Set Temp"
+    id: set_temp
+  supply_voltage:
+    name: "Supply Voltage"
+    id: supply_voltage
+  case_temp:
+    name: "Case Temp"
+    id: case_temp
+  cab_temp:
+    name: "Cab Temp"
+    id: cab_temp
+  start_time:
+    name: "Start Time"
+    id: start_time
+  auto_time:
+    name: "Auto Time"
+    id: auto_time
+  run_time:
+    name: "Run Time"
+    id: run_time
+  is_auto:
+    name: "Is Auto"
+    id: is_auto
+  language:
+    name: "Language"
+    id: language
+  temp_offset:
+    name: "Temp Offset"
+    id: temp_offset
+  tank_volume:
+    name: "Tank Volume"
+    id: tank_volume
+  oil_pump_type:
+    name: "Oil Pump Type"
+    id: oil_pump_type
+  rf433_on_off:
+    name: "RF433 On Off"
+    id: rf433_on_off
+  temp_unit:
+    name: "Temp Unit"
+    id: temp_unit
+  altitude_unit:
+    name: "Altitude Unit"
+    id: altitude_unit
+  automatic_heating:
+    name: "Automatic Heating"
+    id: automatic_heating
+  
+number:
+  - platform: diesel_heater_ble
+    power_level:
+      name: "Power Level"
+      id: power_level
+    set_temp:
+      name: "Target Temperature"
+      id: set_temp_number
+
+switch:
+  - platform: diesel_heater_ble
+    power:
+      name: "Power"
+      id: power_switch
+
+button:
+  - platform: diesel_heater_ble
+    level_up:
+      name: "Level Up"
+      id: level_up_button
+    level_down:
+      name: "Level Down"
+      id: level_down_button
+    temp_up:
+      name: "Temp Up"
+      id: temp_up_button
+    temp_down:
+      name: "Temp Down"
+      id: temp_down_button
