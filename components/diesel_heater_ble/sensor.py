@@ -3,7 +3,6 @@ from esphome.components import ble_client, sensor
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ALTITUDE,
-    CONF_SUPPLY_VOLTAGE,
     DEVICE_CLASS_EMPTY,
     DEVICE_CLASS_TEMPERATURE,
     STATE_CLASS_MEASUREMENT,
@@ -41,6 +40,7 @@ CONF_RF433_ON_OFF = "rf433_on_off"
 CONF_TEMP_UNIT = "temp_unit"
 CONF_ALTITUDE_UNIT = "altitude_unit"
 CONF_AUTOMATIC_HEATING = "automatic_heating"
+CONF_SUPPLY_VOLTAGE = "supply_voltage"
 
 CONFIG_SCHEMA = cv.Schema(
     {
