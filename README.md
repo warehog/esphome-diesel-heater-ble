@@ -7,11 +7,14 @@
 
 - [Part One: Why?](#part-one-why)
   - [How Can It Be Remotely Controlled?](#how-can-it-be-remotely-controlled)
+  - [Is there a one for all solution?](#is-there-a-one-for-all-solution)
 - [Part Two: Hasn’t This Been Done Already?](#part-two-hasnt-this-been-done-already)
 - [Part Three: How It Can (Not) Be Done](#part-three-how-it-can-not-be-done)
-    - [Wondering What I Was Doing Wrong](#wondering-what-i-was-doing-wrong)
+    - [Following others](#following-others)
+    - [What was I doing wrong?](#what-was-i-doing-wrong)
+    - [Knowing the problem is half of its solution](#knowing-the-problem-is-half-of-its-solution)
 - [Part Four: Taking Another Angle](#part-four-taking-another-angle)
-    - [Decompiling JAVA code](#decompiling-java-code)
+    - [Decompiling Java code](#decompiling-java-code)
   - [Acquiring the Source Code](#acquiring-the-source-code)
   - [Key findings](#key-findings)
 - [Part Four: External Component Implementation](#part-four-external-component-implementation)
@@ -35,11 +38,7 @@ I purchased a Bluetooth‐enabled diesel heater for my caravan to replace the or
 This challenge drove me to find a way to remotely control the heater so that I could start heating a few hours before departure without having to be on-site. Since I was already familiar with ESPHome, it made sense to build on that platform—and that’s the result you see here.
 
 ## How Can It Be Remotely Controlled?
-One key insight I discovered (albeit a little too late) is:
-> There is no single type of (Chinese) Bluetooth Diesel Heater!
-
-Although many heaters may look similar, they differ in both design and communication protocols. Below is an overview of the main approaches:
-
+There are actually many ways in which those heater can be hacked.  
 ```
 |--------                   |------------------|                  |----------------|
 |       |        BLE        |       HD         |  UART / Custom   |       CB       |
@@ -52,31 +51,52 @@ Although many heaters may look similar, they differ in both design and communica
 |  RF Remote  | < ---
 |             |
 |-------------|              
-```
->Legend:
+
+
 APP: Mobile or remote application
 HD: Heater Display
 CB: Control Board
+```
 
-| Hacking Method | Pros | Cons |
-|-|-|-|
-| BLE via Heater Display | Uses standard BLE; minimally invasive; unlocks full device potential | Most challenging to implement; requires a compatible BLE device |
-| RF Commands	| Simple to implement via remote button simulation or RF bridging | Lacks feedback (e.g., state or temperature), limiting two-way communication |
-| UART Hack: Replace Heater Display | Provides complete control and unlocks all features | Invasive hardware modification; no backup control if the adapter fails |
-| UART Hack: Intercept Heater Display ↔ Control Board	| Non-invasive; leverages the existing communication setup | Requires precise timing and may result in unstable behavior |
+* BLE/RF
+* Simulating button clicks on HD/Remote
+* Patching onto "blue wire"
+* Replacing HD
+  
+Since I owned a BLE unit, it went as my first choice.
+
+## Is there a one for all solution?
+Definitelly NOPE.
+Although many heaters may look similar, they differ in both design and communication protocols.  
+For BLE, I discovered that there are at least 5 differnet types of devices - with each one using slightly different communication packets.  
+There are also differences in communication between HD and CB. Sometimes plain UART was used, but on my second unit I discovered that a custom serial communication protocol has been used.
 
 The exact method you choose depends on your use case and hardware compatibility.
 
 # Part Two: Hasn’t This Been Done Already?
 
-Many have attempted to control these devices, but none of the available solutions met my specific needs. For example:
+Many have attempted to control these devices, but none of the available solutions met my specific needs:
+- Must be straightforward
+- Non intrusive - heater must works on original display only, when needed
+- Enabled to intrgrate with Home Assistant
+- Cheap
 
-- The standalone [iotmaestro/vevor-heater-ble](https://github.com/iotmaestro/vevor-heater-ble)
-- An ESPHome integration that only partially addresses the problem [spin877/Bruciatore_BLE](https://github.com/spin877/Bruciatore_BLE/blob/main/ESP32-VevorBLE.yaml)
-- The great, but expensive and invasive [After Burner](https://www.mrjones.id.au/afterburner/)
-- ...and several others that I won’t list here.
+This set rules out everything I have seen available.
 
-I scoured the internet for a tool that could do exactly what I needed. Many guides described a seemingly straightforward BLE communication procedure:
+- **[iotmaestro/vevor-heater-ble](https://github.com/iotmaestro/vevor-heater-ble)**  
+  Standalone solution, without HA integration
+- **[spin877/Bruciatore_BLE](https://github.com/spin877/Bruciatore_BLE/blob/main/ESP32-VevorBLE.yaml)**  
+  Esphome, but implemented using only YAML, which cannot possibly cover all usecases an features
+-  **[After Burner](https://www.mrjones.id.au/afterburner/)**  
+   The great, but expensive and invasive
+
+...and so this list goes to nowhere really.
+
+# Part Three: How It Can (Not) Be Done
+
+### Following others
+I scoured the internet for any documentation on how can we talk to those devices using BLE.
+Many guides described a seemingly straightforward communication procedure, which has been proven to work:
 
 - Connect to the BLE device using its MAC address.
 - Register for notifications.
@@ -85,38 +105,45 @@ I scoured the internet for a tool that could do exactly what I needed. Many guid
 
 Easy, right?
 
-As you might imagine, things quickly became far more complex. Although I had left the C/C++ world years ago, I had to dive back in when the need arose.
+As you might imagine, things quickly became far more complex.  
+I was able to talk to it, but in polish while it talked to me japanese.  
 
-And so I did.
+And so with bigger problem, an appropriate weapons are expected, and although I had left the C/C++ world years ago, I had to dive back in when the need arose.
 
-# Part Three: How It Can (Not) Be Done
+**And so I did.**
 
+### What was I doing wrong?
 My professional experience taught me that every problem is solvable—if you approach it from the right angle. Often, when a problem seems unsolvable, it’s because you’re forcing a simple solution onto a more complex issue. Many people appear to solve problems effortlessly not because they’re experts, but because they think about the problem differently.
 
 Initially, I assumed a simple “send a command, read the response” model would work. Instead, I was met with unintelligible gibberish. My next approach was to analyze how the official app communicates with the heater. I spent countless hours setting up a BLE sniffer—using an Android simulator and even Wireshark for packet capture—but nothing worked.
 
-### Wondering What I Was Doing Wrong
-At that point, I began to question why such a simple task—sending a command and reading a response—had become so complex. It soon became clear that I was trying to simplify a problem that was inherently more complicated.
+### Knowing the problem is half of its solution
+At that point, I began to question why such a simple task—sending a command and reading a response—had become so complex.  
+It soon became clear that I was trying to simplify a problem that was inherently more complicated, which explained why a common procedure wans't working for my case.
 
 # Part Four: Taking Another Angle
 
-Eventually, I realized that the solution had been right in front of me all along—in the AirHeaterBLE app itself. Initially, I attempted to use the app for packet sniffing. However, I soon discovered that I could just.. look at it's code directly?
+Eventually, I realized that the solution had been right in front of me all along — in the AirHeaterBLE app itself. Initially, I attempted to use the app for packet sniffing. However, I soon discovered that I could just..  
+**look at it's code directly?**
 
 > Note: In addition to the AirHeaterBLE app, there is another Android app called AirHeaterCC that interfaces with similar diesel heater controllers. The reverse-engineering process for AirHeaterCC is essentially the same, although its JavaScript code structure is slightly different.
 
-### Decompiling JAVA code
+### Decompiling Java code
 I learned that you can decompile almost any APK (Android package) back into source code. In the Java ecosystem, this generally works very well—you’ll often recover nearly the original source code (unless it’s obfuscated, which wasn’t the case here).
 
-After several hours of trying different decompilers and tools, I noticed something peculiar: there was no dedicated section of code handling heater control. And then it hit me:
+After several hours of trying different decompilers and tools, I noticed something peculiar: there was no dedicated section of code handling heater control. No single line that went near to BLE data manipulation. And then it hit me, that this is not 2012, you no longer write mobile apps in Java.
 
 **IT WAS NOT JAVA**.
 
 **IT WAS JAVASCRIPT.**
 
-> Why didn't I looked into it before? Well, beacuse I didn't paid attention. In may ecosystems, the packaged application contains a lot of unimportant (from reverse-engineering perspecive) stuff, like static images, translations, even full runtime environments. And since **React Native** app was budnled into "assets" directory, along some htmls, images and xmls, I simply ignored it.  
+It was a frontend application, that did all data manipulation, and Java was there to provide OS integration.
 
-The answer to my problem was all the time, lying in front of me. In JavaScriopt, but still, and answer.
-So, I dived deep into reverse-engineering the code.
+> Why didn't I looked into it before? Well, beacuse I didn't paid attention. In may ecosystems, the packaged application contains a lot of unimportant (from reverse-engineering perspecive) stuff, like static images, translations, even full runtime environments. And since **React Native** or **Vue** app was bundled into "assets" directory, along some htmls, images and xmls, I simply ignored it.  
+
+The answer to my problem was all the time, lying in front of me.  
+In JavaScriopt **(distang puking noises)**, but still, and answer.  
+So I dived deep into reverse-engineering the code. 
 
 ## Acquiring the Source Code
 I’m a bit embarrassed at how straightforward this turned out to be, but here’s what you need to do:
