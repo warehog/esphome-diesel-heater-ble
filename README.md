@@ -1,24 +1,44 @@
-## ESPHome integration for bluetooth diesel heater
+## EESPHome Integration for Bluetooth Diesel Heater
 
-![alt text](image.png)
+![alt text](doc/display.png)
 
-This repository contains an implementation of esphome external component, designed to controll bluettoth enabled diesel heaters.
 
-# Part one:  Why?
-I bought one of those bluetooth enabled heaters for my caravan, to replace original Truma heater. It works quite well, but it's not what I hoped for in terms of output power.
-Or, perhaps not the power, but overall performance of heating a 7 meter long caravan. 
-Soon, I realized that it's not a power issue, but the time needed to get into a comfortable temperature zone. Going from -5 to +20 takes time. A lot of time. Not only an air must bea heated, but everything else (furniture, utilities, floor etc.)
+## Table of Contents
 
-This pushed me into looking for a solution of remote controlling it. I wanted to start heating few hours before planned departure, without needd to be around all the time. 
+- [Part One: Why?](#part-one-why)
+  - [How Can It Be Remotely Controlled?](#how-can-it-be-remotely-controlled)
+- [Part Two: Hasn’t This Been Done Already?](#part-two-hasnt-this-been-done-already)
+- [Part Three: How It Can (Not) Be Done](#part-three-how-it-can-not-be-done)
+    - [Wondering What I Was Doing Wrong](#wondering-what-i-was-doing-wrong)
+- [Part Four: Taking Another Angle](#part-four-taking-another-angle)
+    - [Decompiling JAVA code](#decompiling-java-code)
+  - [Acquiring the Source Code](#acquiring-the-source-code)
+  - [Key findings](#key-findings)
+- [Part Four: External Component Implementation](#part-four-external-component-implementation)
+  - [What Has Been Done?](#what-has-been-done)
+  - [Key Insights](#key-insights)
+  - [Known Protocols](#known-protocols)
+    - [IMPORTANT: Current Implementation](#important-current-implementation)
+  - [Framework Selection](#framework-selection)
+  - [Future Work / TODO](#future-work--todo)
 
-Since I was already familiar with ESPHome, it went as a first choice, and you are looking on the effect of my efforts.
+> If you came here only for the juice, go ahead:
+[doc/protocols.md](doc/protocols)
 
-## How can it be remote controlled?
-This is something I did realized way too late into the process. and this fact, is this:
-> There is no single (Chineese) Bluetooth Diesel Heater!
+This repository contains an ESPHome external component that enables control of Bluetooth‐enabled diesel heaters.
 
-It's not an obvious thing, since there is a lot of desingns og those, but they all do the same thing. Right? Or, I thout it is that way.
-In reality, thys do are different from each other, not only in outer design, but in the communication protocols used.
+
+
+# Part One: Why?
+I purchased a Bluetooth‐enabled diesel heater for my caravan to replace the original Truma unit. Although it works well, I was disappointed with its output power and overall performance when heating a 7‑meter-long caravan. It wasn’t just about power—it was about how long it took to reach a comfortable temperature. For example, going from –5°C to +20°C takes a significant amount of time, as not only the air but also the furniture, fixtures, and floor need to warm up.
+
+This challenge drove me to find a way to remotely control the heater so that I could start heating a few hours before departure without having to be on-site. Since I was already familiar with ESPHome, it made sense to build on that platform—and that’s the result you see here.
+
+## How Can It Be Remotely Controlled?
+One key insight I discovered (albeit a little too late) is:
+> There is no single type of (Chinese) Bluetooth Diesel Heater!
+
+Although many heaters may look similar, they differ in both design and communication protocols. Below is an overview of the main approaches:
 
 ```
 |--------                   |------------------|                  |----------------|
@@ -33,115 +53,283 @@ In reality, thys do are different from each other, not only in outer design, but
 |             |
 |-------------|              
 ```
+>Legend:
+APP: Mobile or remote application
+HD: Heater Display
+CB: Control Board
 
-| Method                                                      | Pros                                                                                                     | Cons                                                                                                  |
-|-------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
-| Use BLE to communicate with HD | Leverages standard BLE; less intrisive, and gives full potential | Might be the hardest to implement, requires BLE device, not available on all heaters |
-| Use RF commands to control HD | Quite simple, either by tapping into original remote buttons (siumulate clicks) or use some RF Bridge | Enables controll without feedback; not possible to read state, temperature etc          |
-| Hack UART: Replace original HD and talk with CB directly    | Unlocks all features of heater, with much grated controll over original display| Invasive hardware modification; no backup controll when adapter fails |
-| Hack UART: Intercept existing HD-CB communication | Non-invasive integration preserving original hardware; can leverage existing communication setup | Complex firmware timing; risk of unstable behavior|
+| Hacking Method | Pros | Cons |
+|-|-|-|
+| BLE via Heater Display | Uses standard BLE; minimally invasive; unlocks full device potential | Most challenging to implement; requires a compatible BLE device |
+| RF Commands	| Simple to implement via remote button simulation or RF bridging | Lacks feedback (e.g., state or temperature), limiting two-way communication |
+| UART Hack: Replace Heater Display | Provides complete control and unlocks all features | Invasive hardware modification; no backup control if the adapter fails |
+| UART Hack: Intercept Heater Display ↔ Control Board	| Non-invasive; leverages the existing communication setup | Requires precise timing and may result in unstable behavior |
 
-Exact way on how you should controll it, depends on the use case and hardware compability. 
+The exact method you choose depends on your use case and hardware compatibility.
 
+# Part Two: Hasn’t This Been Done Already?
 
-# Part two: Doesn't it already been been done?
+Many have attempted to control these devices, but none of the available solutions met my specific needs. For example:
 
-Many attempts has been made to control these devices, but none of them seemed to fit my needs.<br>
-Some solutions, like: 
-* standalone [iotmaestro/vevor-heater-ble](https://github.com/iotmaestro/vevor-heater-ble)  
-* ESPHome without fully integrating with it [spin877/Bruciatore_BLE](https://github.com/spin877/Bruciatore_BLE/blob/main/ESP32-VevorBLE.yaml).
-* ...and few others there is no point to list.
+- The standalone [iotmaestro/vevor-heater-ble](https://github.com/iotmaestro/vevor-heater-ble)
+- An ESPHome integration that only partially addresses the problem [spin877/Bruciatore_BLE](https://github.com/spin877/Bruciatore_BLE/blob/main/ESP32-VevorBLE.yaml)
+- The great, but expensive and invasive [After Burner](https://www.mrjones.id.au/afterburner/)
+- ...and several others that I won’t list here.
 
-I have gone through half of the internet looking for right tool.<br>
-In many places, people were menitoning a procedure of communication with those using BLE and it seemed so easy to do. <br>
-Follow those steps:
-* Connect to BLE deice iwth MAC
-* Register for notification
-* Send some predefined string to get status and parse it (status, temperature, voltage (...))
-* Send some predefined string to power on / power off / level up / level down/ change mode
+I scoured the internet for a tool that could do exactly what I needed. Many guides described a seemingly straightforward BLE communication procedure:
+
+- Connect to the BLE device using its MAC address.
+- Register for notifications.
+- Send a predefined string to request status (e.g., heater state, temperature, voltage) and parse the response.
+- Send commands to power on/off, adjust levels, or change modes.
 
 Easy, right?
 
-As you are reading this, you might suspect that it was, indeed, not easy.<br>
-I have left a C/C++ world many years ago, in favor of, like, everything else, but when the need calls, what could I do?<br>
+As you might imagine, things quickly became far more complex. Although I had left the C/C++ world years ago, I had to dive back in when the need arose.
 
 And so I did.
 
-# Part three: How it can(not) be done?
+# Part Three: How It Can (Not) Be Done
 
-What I learned through years of professional experience, is that every problem is solvable.<br>
-If it happend to seem unsolvable, you don't need to just spend more time on it - it mean that you are doing it wrong.
-That's way some peaple seems to do maginc things so easily - and it's not beacuse they are pros, but beacuse they thought about the problem from a perspective no one else has thought before.
+My professional experience taught me that every problem is solvable—if you approach it from the right angle. Often, when a problem seems unsolvable, it’s because you’re forcing a simple solution onto a more complex issue. Many people appear to solve problems effortlessly not because they’re experts, but because they think about the problem differently.
 
-Initially what I wanted, was a simple solution to a simple problem. Just send some string, read the response, send another string, read it again. blah blah.
-Non ot it worked. I only got some unparsable giberish, that didn't made any sense. 
+Initially, I assumed a simple “send a command, read the response” model would work. Instead, I was met with unintelligible gibberish. My next approach was to analyze how the official app communicates with the heater. I spent countless hours setting up a BLE sniffer—using an Android simulator and even Wireshark for packet capture—but nothing worked.
 
-Second thoutght was to see how the official APP ccommunucates with the heater. I spend way to much time, setting up a BLE sniffer. I even attempted to use Android simulator with the app inside, and Wireshark on host for packet capture. And you know what? IT DIDNT WORK.
+### Wondering What I Was Doing Wrong
+At that point, I began to question why such a simple task—sending a command and reading a response—had become so complex. It soon became clear that I was trying to simplify a problem that was inherently more complicated.
 
-### Wondering what I'm doing wroing
-At that point I was wondering, why is it so complex? How did I came here? I only want to send a command and read the response, how much is it to expect?<br>
-Then this idea has stiked me, that I'm doing it wrong. I wanted to have a simple solution, so I was focused on wanting a simple solution, while the problem I was solving was way bigger.
+# Part Four: Taking Another Angle
 
-# Part four: Taking another angle
+Eventually, I realized that the solution had been right in front of me all along—in the AirHeaterBLE app itself. Initially, I attempted to use the app for packet sniffing. However, I soon discovered that I could just.. look at it's code directly?
 
-At some point in the whole process I realised that, perhaps, the solution was in fron of me all the time. And it was the AirHeaterBLE app itself. 
-
-I tried to use it for packet sniffing, but hand't realized that I can just.. look inside it?
+> Note: In addition to the AirHeaterBLE app, there is another Android app called AirHeaterCC that interfaces with similar diesel heater controllers. The reverse-engineering process for AirHeaterCC is essentially the same, although its JavaScript code structure is slightly different.
 
 ### Decompiling JAVA code
-It turned out, that you can preety much decompile any APK (standard Android packaged application installer), back into a source code. There is many techniques for different languages, with varying results between them.<br>
-In Java world, it works quite well - you get almost original soirce code. There are some cases, when code is encrypted, but fortunatelly, it was not here.
+I learned that you can decompile almost any APK (Android package) back into source code. In the Java ecosystem, this generally works very well—you’ll often recover nearly the original source code (unless it’s obfuscated, which wasn’t the case here).
 
-After few hours, trygin different decompilers and some other tools, I knew that there is some part of the code that I'm missing. There was no single part where any heater controll code was included.
-
-And then it happended.
+After several hours of trying different decompilers and tools, I noticed something peculiar: there was no dedicated section of code handling heater control. And then it hit me:
 
 **IT WAS NOT JAVA**.
 
 **IT WAS JAVASCRIPT.**
 
-The answer to my problem was all the time, lying in front of me.
+> Why didn't I looked into it before? Well, beacuse I didn't paid attention. In may ecosystems, the packaged application contains a lot of unimportant (from reverse-engineering perspecive) stuff, like static images, translations, even full runtime environments. And since **React Native** app was budnled into "assets" directory, along some htmls, images and xmls, I simply ignored it.  
 
+The answer to my problem was all the time, lying in front of me. In JavaScriopt, but still, and answer.
+So, I dived deep into reverse-engineering the code.
 
+## Acquiring the Source Code
+I’m a bit embarrassed at how straightforward this turned out to be, but here’s what you need to do:
 
+- Download the APK from https://apkpure.com/airheaterble/com.clj.airheater
+- Unzip it (yes! it's just plain zip, even widows can handle it)
+- Navigate to `assets\apps\__UNI__1471D01\www\app-service.js`
 
+This code is a one big mess, bit with right tools, it can be readed.
+- Disable word wrap in your text editor.
+- Remove all lines, except first one ![alt text](doc/code-to-ignore.png)
+- Format the single long line using a tool like [Beautifier.io](https://beautifier.io) (if the page crashes, try an alternative beautifier).
 
-So, I delved deep into reverse-engineering the entire protocol, and this code is the result of that effort.
+> This section of the code is particularly interesting. It accepts incoming data frames and, depending on header values, employs different strategies for decoding them.
 
-## What has been done?
-- Created the `diesel_heater_ble` component, which implements the BLE protocol to communicate with the heater controller board.
-- Added sensors for all possible settings retrieved from the controller.
-- Introduced switches, buttons, and number controls for the most significant features, including:
+>**IMPORTANT! Original code has been reformatted by ChatGPT o3 to make it more human readable.**
+```javascript
+// Process received data values
+      if (event.type === "didUpdateValue") {
+        const dataBytes = self.HexString2Bytes(event.data.hex);
+
+        // Case 1: Header 170, 85
+        if (self.u8tonumber(dataBytes[0]) === 170 && self.u8tonumber(dataBytes[1]) === 85) {
+          self.md = 1;
+          self.lasttime = Date.now();
+          self.rcv_cmd = dataBytes[2];
+          self.runningstate = self.u8tonumber(dataBytes[3]);
+          self.errcode = self.u8tonumber(dataBytes[4]);
+          self.runningstep = self.u8tonumber(dataBytes[5]);
+          self.altitude = self.u8tonumber(dataBytes[6]) + 256 * self.u8tonumber(dataBytes[7]);
+          self.runningmode = self.u8tonumber(dataBytes[8]);
+
+          if (self.runningmode === 1) {
+            self.setlevel = self.u8tonumber(dataBytes[9]);
+          } else if (self.runningmode === 2) {
+            self.settemp = self.u8tonumber(dataBytes[9]);
+            self.setlevel = self.u8tonumber(dataBytes[10]) + 1;
+          } else if (self.runningmode === 0) {
+            self.setlevel = self.u8tonumber(dataBytes[10]) + 1;
+          }
+
+          self.supplyvoltage = (
+            (256 * self.u8tonumber(dataBytes[12]) + self.u8tonumber(dataBytes[11])) /
+            10
+          ).toFixed(1);
+          self.casetemp = self.UnsignToSign(256 * dataBytes[14] + dataBytes[13]);
+          self.cabtemp = self.UnsignToSign(256 * dataBytes[16] + dataBytes[15]);
+          self.connected = true;
+        }
+        // Case 2: Header 170, 102
+        else if (self.u8tonumber(dataBytes[0]) === 170 && self.u8tonumber(dataBytes[1]) === 102) {
+          self.lasttime = Date.now();
+          self.rcv_cmd = dataBytes[2];
+          self.runningstate = self.u8tonumber(dataBytes[3]);
+          self.errcode = self.u8tonumber(dataBytes[17]);
+          self.runningstep = self.u8tonumber(dataBytes[5]);
+          self.altitude = self.u8tonumber(dataBytes[6]) + 256 * self.u8tonumber(dataBytes[7]);
+          self.runningmode = self.u8tonumber(dataBytes[8]);
+
+          if (self.runningmode === 1) {
+            self.setlevel = self.u8tonumber(dataBytes[9]);
+          } else if (self.runningmode === 2) {
+            self.settemp = self.u8tonumber(dataBytes[9]);
+            self.setlevel = self.u8tonumber(dataBytes[10]) + 1;
+          } else if (self.runningmode === 0) {
+            self.setlevel = self.u8tonumber(dataBytes[10]) + 1;
+          }
+
+          self.supplyvoltage = (
+            (256 * self.u8tonumber(dataBytes[12]) + self.u8tonumber(dataBytes[11])) /
+            10
+          ).toFixed(1);
+          self.casetemp = self.UnsignToSign(256 * dataBytes[14] + dataBytes[13]);
+          self.cabtemp = self.UnsignToSign(256 * dataBytes[16] + dataBytes[15]);
+          self.md = 3;
+          self.connected = true;
+        }
+        // Other cases – decrypt data and process accordingly
+        else {
+          // Decrypt 6 blocks (each of 8 bytes)
+          for (let j = 0; j < 6; j++) {
+            const baseIndex = 8 * j;
+            dataBytes[baseIndex] = 112 ^ dataBytes[baseIndex];
+            dataBytes[baseIndex + 1] = 97 ^ dataBytes[baseIndex + 1];
+            dataBytes[baseIndex + 2] = 115 ^ dataBytes[baseIndex + 2];
+            dataBytes[baseIndex + 3] = 115 ^ dataBytes[baseIndex + 3];
+            dataBytes[baseIndex + 4] = 119 ^ dataBytes[baseIndex + 4];
+            dataBytes[baseIndex + 5] = 111 ^ dataBytes[baseIndex + 5];
+            dataBytes[baseIndex + 6] = 114 ^ dataBytes[baseIndex + 6];
+            dataBytes[baseIndex + 7] = 100 ^ dataBytes[baseIndex + 7];
+          }
+
+          g("log", "at ble/ble.js:260", dataBytes);
+
+          if (self.u8tonumber(dataBytes[0]) === 170 && self.u8tonumber(dataBytes[1]) === 85) {
+            self.lasttime = Date.now();
+            self.rcv_cmd = dataBytes[2];
+            self.runningstate = self.u8tonumber(dataBytes[3]);
+            self.errcode = self.u8tonumber(dataBytes[4]);
+            self.runningstep = self.u8tonumber(dataBytes[5]);
+            self.altitude = (self.u8tonumber(dataBytes[7]) + 256 * self.u8tonumber(dataBytes[6])) / 10;
+            self.runningmode = self.u8tonumber(dataBytes[8]);
+            self.setlevel = self.maxmin(self.u8tonumber(dataBytes[10]), 1, 10);
+
+            if (self.tempunit !== 1) {
+              self.settemp = self.maxmin(self.u8tonumber(dataBytes[9]), 8, 36);
+            } else {
+              self.settemp = self.maxmin(self.u8tonumber(dataBytes[9]), 40, 99);
+            }
+
+            self.supplyvoltage = (256 * dataBytes[11] + dataBytes[12]) / 10;
+            self.casetemp = self.UnsignToSign(256 * dataBytes[13] + dataBytes[14]);
+            self.cabtemp = self.UnsignToSign(256 * dataBytes[32] + dataBytes[33]) / 10;
+            self.sttime = 256 * self.u8tonumber(dataBytes[19]) + self.u8tonumber(dataBytes[20]);
+            self.autotime = 256 * self.u8tonumber(dataBytes[21]) + self.u8tonumber(dataBytes[22]);
+            self.runtime = 256 * self.u8tonumber(dataBytes[23]) + self.u8tonumber(dataBytes[24]);
+            self.isauto = self.u8tonumber(dataBytes[25]);
+            self.language = self.maxmin(self.u8tonumber(dataBytes[26]), 0, 5);
+            self.tempoffset = self.UnsignToSign8(self.u8tonumber(dataBytes[34]));
+            self.tankvolume = self.u8tonumber(dataBytes[28]);
+            self.oilpumptype = self.u8tonumber(dataBytes[29]);
+            self.rf433onoff = dataBytes[29] === 20 ? 0 : dataBytes[29] === 21 ? 1 : self.rf433onoff;
+            self.tempunit = self.u8tonumber(dataBytes[27]);
+            self.altiunit = self.u8tonumber(dataBytes[30]);
+            self.automaticheating = self.u8tonumber(dataBytes[31]);
+            self.md = 2;
+            self.connected = true;
+          } else if (self.u8tonumber(dataBytes[0]) === 170 && self.u8tonumber(dataBytes[1]) === 102) {
+            self.lasttime = Date.now();
+            self.rcv_cmd = dataBytes[2];
+            self.runningstate = self.u8tonumber(dataBytes[3]);
+            self.errcode = self.u8tonumber(dataBytes[35]);
+            self.runningstep = self.u8tonumber(dataBytes[5]);
+            self.altitude = (self.u8tonumber(dataBytes[7]) + 256 * self.u8tonumber(dataBytes[6])) / 10;
+            self.runningmode = self.u8tonumber(dataBytes[8]);
+            self.setlevel = self.maxmin(self.u8tonumber(dataBytes[10]), 1, 10);
+
+            if (self.tempunit !== 1) {
+              self.settemp = self.maxmin(self.u8tonumber(dataBytes[9]), 8, 36);
+            } else {
+              self.settemp = self.maxmin(self.u8tonumber(dataBytes[9]), 40, 99);
+            }
+
+            self.supplyvoltage = (256 * dataBytes[11] + dataBytes[12]) / 10;
+            self.casetemp = self.UnsignToSign(256 * dataBytes[13] + dataBytes[14]);
+            self.cabtemp = self.UnsignToSign(256 * dataBytes[32] + dataBytes[33]) / 10;
+            self.sttime = 256 * self.u8tonumber(dataBytes[19]) + self.u8tonumber(dataBytes[20]);
+            self.autotime = 256 * self.u8tonumber(dataBytes[21]) + self.u8tonumber(dataBytes[22]);
+            self.runtime = 256 * self.u8tonumber(dataBytes[23]) + self.u8tonumber(dataBytes[24]);
+            self.isauto = self.u8tonumber(dataBytes[25]);
+            self.language = self.maxmin(self.u8tonumber(dataBytes[26]), 0, 5);
+            self.tempoffset = self.UnsignToSign8(self.u8tonumber(dataBytes[34]));
+            self.tankvolume = self.u8tonumber(dataBytes[28]);
+            self.oilpumptype = self.u8tonumber(dataBytes[29]);
+            self.rf433onoff = dataBytes[29] === 20 ? 0 : dataBytes[29] === 21 ? 1 : self.rf433onoff;
+            self.tempunit = self.u8tonumber(dataBytes[27]);
+            self.altiunit = self.u8tonumber(dataBytes[30]);
+            self.automaticheating = self.u8tonumber(dataBytes[31]);
+            self.md = 4;
+            self.connected = true;
+          }
+        }
+      }
+```
+
+## Key findings
+* There are at least 4 protocol versions available
+
+# Part Four: External Component Implementation
+## What Has Been Done?
+- Created the diesel_heater_ble Component: Implements the BLE protocol to communicate with the heater controller board.
+- Added Sensors: Supports all settings retrieved from the controller.
+- Introduced Controls: Provides switches, buttons, and number inputs for key features, including:
   - Power switch
   - Level-up button
   - Level-down button
   - Temperature-up button
   - Temperature-down button
-  - Level set (number)
-  - Temperature set (number)
-- Enabled extensibility for this component to support future versions of controllers.
+  - Level set (number input)
+  - Temperature set (number input)
+- Ensured Extensibility: The component is designed to support future versions of controllers.
+
 
 ## Key Insights
-One of the major discoveries was that there is no single protocol for communicating with all BLE-enabled controllers. Most existing documentation, repositories, and code focus on one of at least four protocol versions (apparently the oldest one).
+One major discovery is that no single protocol exists for communicating with all BLE-enabled controllers. Most existing documentation and repositories focus on one of at least four protocol versions—typically the oldest.
 
 ## Known Protocols
 Protocols are identified by the first two bytes of the response:
-- **0xAA 0x55**: The most basic protocol with a 20-byte response frame.
-- **0xAA 0x66**: Very similar to the previous one, with a slightly different order of bytes in the response.
-- **0xAA 0x55 (encrypted)**: A newer version with a 48-byte encrypted data frame.
-- **0xAA 0x66 (encrypted)**: Another newer version with a 48-byte encrypted data frame and altered byte order.
 
-Each protocol uses slightly different formats for requests and responses. From the controller’s perspective, incoming data (requests from the mobile app) is "plain text," while responses are encrypted only in the most recent protocol versions.
+- **0xAA 0x55:**  
+  The most basic protocol, featuring a 20-byte response frame.
+- **0xAA 0x66:**  
+  Very similar to the previous protocol, but with a slightly different byte order in the response.
+- **0xAA 0x55 (encrypted):**  
+  A newer version that uses a 48-byte encrypted data frame.
+- **0xAA 0x66 (encrypted):**  
+  Another newer version with a 48-byte encrypted data frame and an altered byte order.
+
+Each protocol employs slightly different formats for requests and responses. For incoming data (requests from the mobile app), the controller expects "plain text," whereas responses are encrypted only in the most recent protocol versions.
 
 ### IMPORTANT: Current Implementation
-This code implements parsing for all protocol versions’ responses but can only send commands using the **0xAA 0x55 (encrypted)** protocol.  
-I own a heater that uses this third protocol version, so it is fully implemented in this PR. For other protocols, I would appreciate assistance from owners of devices using those versions.
+This code parses responses for all protocol versions but currently sends commands only using the **0xAA 0x55 (encrypted)** protocol. I own a heater that uses this third protocol version, so it is fully implemented in this PR. For the other protocols, I welcome assistance from owners of devices using those versions.
 
 ## Framework Selection
-The BLE stack takes up a significant amount of flash memory. Together with several sensors, buttons, etc., I exceeded the 4MB flash capacity of my ESP32 Lolin Lite.  
-I discovered that using the ESP-IDF framework results in a smaller binary compared to the Arduino framework. Therefore, unless you have an 8MB board, ESP-IDF is the only viable solution.
+The BLE stack occupies a significant amount of flash memory. Combined with several sensors, buttons, and other components, this quickly exceeded the 4MB flash capacity of my ESP32 Lolin Lite. I found that the ESP-IDF framework produces a smaller binary compared to the Arduino framework. Therefore, unless you have an 8MB board, ESP-IDF is the only viable option.
 
-## TODO
-- Implement `HeaterController_*` classes to support other types of controllers.
-- Add a climate component for unification.
-- Refactor the code to allow configurations without buttons, switches, or numbers. Currently, if no button/switch/sensor/number is defined in the YAML, the C++ compiler throws an error about missing headers (e.g., when no button is configured, `esphome/components/button/button.h` cannot be found).
+## Future Work / TODO
+
+- **Support for Additional Controllers:**  
+  Implement `HeaterController_*` classes for other controller types.
+  
+- **Unified Climate Component:**  
+  Integrate a climate component for standardized control.
+  
+- **Code Refactoring:**  
+  Allow configuration without buttons, switches, or numbers. Currently, if none of these are defined in the YAML, the C++ compiler complains about missing header files (e.g., `esphome/components/button/button.h`).

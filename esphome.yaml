@@ -1,4 +1,5 @@
 esphome:
+  # Names shorter than 2 characters seems to be not working in HA integration
   name: heater-adapter-ble
 
 esp32:
