@@ -30,6 +30,7 @@ class HeaterState {
   uint16_t cabtemp;
 
   // encoded types only
+  struct {
   uint16_t sttime;
   uint16_t autotime;
   uint16_t runtime;
@@ -42,10 +43,12 @@ class HeaterState {
   uint8_t tempunit;
   uint8_t altiunit;
   uint8_t automaticheating;
+  bool has_extras = false;
+  } extras;
 
   // return table format of data with columnt names
   std::string to_string() {
-    return "HeaterState: \n"
+    std::string table = "HeaterState: \n"
            "  heater_class: " +
            std::to_string(static_cast<int>(heater_class)) +
            "\n"
@@ -81,18 +84,21 @@ class HeaterState {
            "\n"
            "  cabtemp: " +
            std::to_string(cabtemp) +
-           "\n"
-           "  sttime: " +
-           std::to_string(sttime) +
-           "\n"
-           "  autotime: " +
-           std::to_string(autotime) +
-           "\n"
-           "  runtime: " +
-           std::to_string(runtime) +
-           "\n"
-           "  isauto: " +
-           std::to_string(isauto) + "\n";
+           "\n";
+      if (extras.has_extras) {
+        table += "  sttime: " +
+            std::to_string(extras.sttime) +
+            "\n"
+            "  autotime: " +
+            std::to_string(extras.autotime) +
+            "\n"
+            "  runtime: " +
+            std::to_string(extras.runtime) +
+            "\n"
+            "  isauto: " +
+            std::to_string(extras.isauto) + "\n";
+          }
+    return table;
   }
 };
 

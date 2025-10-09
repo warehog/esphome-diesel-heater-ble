@@ -106,22 +106,26 @@ class ResponseParser {
 
     // encrypted types only
     if (heater_class == HeaterClass::HEATER_AA_55_ENCRYPTED || heater_class == HeaterClass::HEATER_AA_66_ENCRYPTED) {
-      state.sttime = decrypted[20] + (decrypted[19] << 8);
-      state.autotime = decrypted[22] + (decrypted[21] << 8);
-      state.runtime = decrypted[24] + (decrypted[23] << 8);
-      state.isauto = decrypted[25];
-      state.language = decrypted[26];
-      state.tempoffset = decrypted[34];
-      state.tankvolume = decrypted[28];
-      state.oilpumptype = decrypted[29];
+      state.extras.sttime = decrypted[20] + (decrypted[19] << 8);
+      state.extras.autotime = decrypted[22] + (decrypted[21] << 8);
+      state.extras.runtime = decrypted[24] + (decrypted[23] << 8);
+      state.extras.isauto = decrypted[25];
+      state.extras.language = decrypted[26];
+      state.extras.tempoffset = decrypted[34];
+      state.extras.tankvolume = decrypted[28];
+      state.extras.oilpumptype = decrypted[29];
       if (raw[29] == 20) {
-        state.rf433onoff = false;
+        state.extras.rf433onoff = false;
       } else if (raw[29] == 21) {
-        state.rf433onoff = true;
+        state.extras.rf433onoff = true;
       }
-      state.tempunit = decrypted[27];
-      state.altiunit = decrypted[30];
-      state.automaticheating = decrypted[31];
+      state.extras.tempunit = decrypted[27];
+      state.extras.altiunit = decrypted[30];
+      state.extras.automaticheating = decrypted[31];
+
+      state.extras.has_extras = true;
+    } else {
+      state.extras.has_extras = false;
     }
 
     return true;
