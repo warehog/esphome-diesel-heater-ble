@@ -37,8 +37,10 @@ class ResponseParser {
         return HeaterClass::HEATER_AA_55;
       case 0x66:
         return HeaterClass::HEATER_AA_66;
-      case 0x07:
+      case 0x34: // 0x55 ^ 97
         return HeaterClass::HEATER_AA_55_ENCRYPTED;
+      case 0x07: // 0x66 ^ 97
+        return HeaterClass::HEATER_AA_66_ENCRYPTED;
       default:
         return HeaterClass::HEATER_CLASS_UNKNOWN;
     }
