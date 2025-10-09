@@ -48,6 +48,7 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
 
   void on_notification_received(const std::vector<uint8_t> &data);
   void update_sensors(const HeaterState &new_state);
+  void update_time();
 
   void set_time(esphome::time::RealTimeClock *t) { time_ = t; }
 
