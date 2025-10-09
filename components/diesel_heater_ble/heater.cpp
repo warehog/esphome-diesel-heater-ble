@@ -111,6 +111,14 @@ void DieselHeaterBLE::on_notification_received(const std::vector<uint8_t> &data)
       ESP_LOGD(TAG, "Failed to get controller.");
       return;
     }
+    if (millis() - this->last_time_set_ > 24 * 60 * 60 * 1000) {
+      // Set time on heater once per day
+      auto now = id(ha_time).now();
+      if (now.is_valid()) {
+        this->sent_requests(this->controller_->gen_time_command(now.hour, now.minute))
+        this->last_time_set_ = millis();
+      }
+    }
   }
 
   bool ret = ResponseParser::parse(data, this->state_);

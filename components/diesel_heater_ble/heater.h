@@ -109,6 +109,7 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
   bool response_received_{false};
   uint32_t last_request_{0};
   uint32_t last_update_{0};
+  uint32_t last_time_set_{0};
 
   // Sensor fields
   sensor::Sensor *running_state_{};
