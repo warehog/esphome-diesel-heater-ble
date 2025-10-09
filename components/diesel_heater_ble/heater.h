@@ -11,6 +11,7 @@
 #include "esphome/components/number/number.h"
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/button/button.h"
+#include "esphome/components/time/real_time_clock.h"
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
 
@@ -47,6 +48,8 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
 
   void on_notification_received(const std::vector<uint8_t> &data);
   void update_sensors(const HeaterState &new_state);
+
+  void set_time(esphome::time::RealTimeClock *t) { time_ = t; }
 
   // Sensor setters
   void set_running_state(sensor::Sensor *sensor) { running_state_ = sensor; }
@@ -110,6 +113,7 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
   uint32_t last_request_{0};
   uint32_t last_update_{0};
   uint32_t last_time_set_{0};
+  esphome::time::RealTimeClock *time_{nullptr};
 
   // Sensor fields
   sensor::Sensor *running_state_{};

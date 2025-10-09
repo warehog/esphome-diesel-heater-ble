@@ -34,6 +34,7 @@ time:
 
 diesel_heater_ble:
   ble_client_id: ble_client_id
+  time_id: ha_time
 
 sensor:
   platform: diesel_heater_ble
