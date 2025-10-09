@@ -25,9 +25,9 @@ class HeaterState {
   uint8_t runningmode;
   uint8_t setlevel;
   uint8_t settemp;
-  uint16_t supplyvoltage;
+  float supplyvoltage;
   uint16_t casetemp;
-  uint16_t cabtemp;
+  float cabtemp;
 
   // encoded types only
   uint16_t sttime;
