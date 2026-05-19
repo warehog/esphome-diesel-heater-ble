@@ -5,6 +5,7 @@ from esphome.const import CONF_ID
 
 CODEOWNERS = ["@warehog"]
 DEPENDENCIES = ["ble_client"]
+AUTO_LOAD = ["sensor", "button", "number", "switch", "climate"]
 
 CONF_DIESEL_HEATER_BLE = "diesel_heater_ble"
 
