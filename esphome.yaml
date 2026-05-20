@@ -20,12 +20,9 @@ wifi:
       password: <password>
 
 external_components:
-  # - source: github://carleeno/esphome-diesel-heater-ble@main
-  #   refresh: 0s
-  #   components: [diesel_heater_ble]
-  - source:
-      type: local
-      path: components
+  - source: github://warehog/esphome-diesel-heater-ble@main
+    refresh: 0s
+    components: [diesel_heater_ble]
 
 esp32_ble_tracker:
 
