@@ -30,6 +30,7 @@ class DieselHeaterClimate : public climate::Climate, public Component {
   /// How long to wait without an external reading before falling back to the heater's
   /// built-in auto mode. Configured via external_temperature_timeout in YAML.
   void set_external_temperature_timeout(uint32_t timeout_ms) { this->ext_temp_timeout_ms_ = timeout_ms; }
+  void set_external_temperature_timeout_heating(uint32_t timeout_ms) { this->ext_temp_timeout_heating_ms_ = timeout_ms; }
 
   /// When true, incoming external temperatures are converted from °F to °C before use.
   void set_external_temperature_fahrenheit(bool use_f) { this->ext_temp_fahrenheit_ = use_f; }
@@ -56,7 +57,8 @@ class DieselHeaterClimate : public climate::Climate, public Component {
 
   // External temperature control state
   float external_temperature_{NAN};
-  uint32_t ext_temp_timeout_ms_{5 * 60 * 1000};  // default 5 minutes; override via YAML
+  uint32_t ext_temp_timeout_ms_{2 * 60 * 60 * 1000};  // default 2 hours; override via YAML
+  uint32_t ext_temp_timeout_heating_ms_{15 * 60 * 1000};  // default 15 minutes; override via YAML
   uint32_t last_ext_temp_ms_{0};                 // 0 = never received
   uint32_t last_level_update_ms_{0};
   bool ext_temp_fahrenheit_{false};

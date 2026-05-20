@@ -37,7 +37,8 @@ climate:
   - platform: diesel_heater_ble
     name: "Diesel Heater"
     id: diesel_heater_climate
-    external_temperature_timeout: 5min
+    external_temperature_timeout: 2h        # time at which it fall back to internal temperature, even while off/idle
+    external_temperature_timeout_heating: 15min # time at which it fall back to internal temperature, while actively heating
     external_temperature_fahrenheit: false
     external_stage_gain: 2.0                # levels per degree C
     external_off_error: -0.5                # degrees C (negative error = over temp setpoint)
@@ -52,9 +53,7 @@ sensor:
     entity_id: sensor.my_external_temperature
     id: my_external_temperature
     filters:
-      - throttle: 10s
-      - heartbeat: 30s    # must be shorter than external_temperature_timeout
-      - debounce: 2s
+      - debounce: 10s      # adding heartbeat would defeat the timeout safety as it replays the last seen state endlessly
     on_value:
       - lambda: id(diesel_heater_climate).set_external_temperature(x);
   - platform: diesel_heater_ble

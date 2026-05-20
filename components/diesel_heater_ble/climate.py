@@ -13,6 +13,7 @@ DieselHeaterClimate = diesel_heater_ble_ns.class_(
 )
 
 CONF_EXTERNAL_TEMPERATURE_TIMEOUT = "external_temperature_timeout"
+CONF_EXTERNAL_TEMPERATURE_TIMEOUT_HEATING = "external_temperature_timeout_heating"
 CONF_EXTERNAL_USE_FAHRENHEIT = "external_temperature_fahrenheit"
 CONF_EXTERNAL_STAGE_GAIN = "external_stage_gain"
 CONF_EXTERNAL_OFF_ERROR = "external_off_error"
@@ -28,7 +29,10 @@ CONFIG_SCHEMA = (
         {
             cv.GenerateID(CONF_DIESEL_HEATER_BLE): cv.use_id(DieselHeaterBLE),
             cv.Optional(
-                CONF_EXTERNAL_TEMPERATURE_TIMEOUT, default="5min"
+                CONF_EXTERNAL_TEMPERATURE_TIMEOUT, default="2h"
+            ): cv.positive_time_period_milliseconds,
+            cv.Optional(
+                CONF_EXTERNAL_TEMPERATURE_TIMEOUT_HEATING, default="15min"
             ): cv.positive_time_period_milliseconds,
             cv.Optional(CONF_EXTERNAL_USE_FAHRENHEIT, default=False): cv.boolean,
             cv.Optional(CONF_EXTERNAL_STAGE_GAIN, default=2.0): cv.float_range(min=0.01),
@@ -52,6 +56,7 @@ async def to_code(config):
     cg.add(var.set_heater(parent))
     cg.add(parent.set_climate(var))
     cg.add(var.set_external_temperature_timeout(config[CONF_EXTERNAL_TEMPERATURE_TIMEOUT]))
+    cg.add(var.set_external_temperature_timeout_heating(config[CONF_EXTERNAL_TEMPERATURE_TIMEOUT_HEATING]))
     cg.add(var.set_external_temperature_fahrenheit(config[CONF_EXTERNAL_USE_FAHRENHEIT]))
     cg.add(var.set_external_stage_gain(config[CONF_EXTERNAL_STAGE_GAIN]))
     cg.add(var.set_external_off_error(config[CONF_EXTERNAL_OFF_ERROR]))

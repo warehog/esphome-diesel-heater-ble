@@ -53,9 +53,11 @@ uint8_t DieselHeaterClimate::stage_level_for_error_(float error_c) const {
 
 bool DieselHeaterClimate::refresh_using_external_(uint32_t now) {
   const bool was_using_external = this->using_external_;
+  const bool is_heating = this->heater_->get_state().runningstate != 0;
+  const u_int32_t timeout = is_heating ? this->ext_temp_timeout_heating_ms_ : this->ext_temp_timeout_ms_;
   const bool has_recent_sample =
       this->last_ext_temp_ms_ != 0 &&
-      static_cast<uint32_t>(now - this->last_ext_temp_ms_) <= this->ext_temp_timeout_ms_;
+      static_cast<uint32_t>(now - this->last_ext_temp_ms_) <= timeout;
   this->using_external_ = has_recent_sample;
   return this->using_external_ != was_using_external;
 }
@@ -112,7 +114,7 @@ void DieselHeaterClimate::loop() {
   const bool external_usage_changed = this->refresh_using_external_(now);
 
   if (external_usage_changed && !this->using_external_) {
-    ESP_LOGW(TAG, "External sensor timed out (%u ms), falling back to built-in controls", this->ext_temp_timeout_ms_);
+    ESP_LOGW(TAG, "External sensor timed out (%u ms), falling back to built-in controls", now - this->last_ext_temp_ms_);
     if (this->auto_requested_ && this->climate_heat_requested_) {
       this->heater_->on_power_switch(true);
       this->heater_->on_temp_number(this->target_temperature);
