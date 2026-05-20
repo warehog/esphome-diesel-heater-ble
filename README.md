@@ -316,7 +316,7 @@ This code is a one big mess, bit with right tools, it can be readed.
 ## What Has Been Done?
 - Created the diesel_heater_ble Component: Implements the BLE protocol to communicate with the heater controller board.
 - Added Sensors: Supports all settings retrieved from the controller.
-- Introduced Controls: Provides switches, buttons, and number inputs for key features, including:
+- Introduced Controls: Provides a climate entity, switches, buttons, and number inputs for key features, including:
   - Power switch
   - Level-up button
   - Level-down button
@@ -324,6 +324,10 @@ This code is a one big mess, bit with right tools, it can be readed.
   - Temperature-down button
   - Level set (number input)
   - Temperature set (number input)
+  - Climate entity:
+    - Full control over the heater using the native climate UI. Temperature setting adjusts auto setpoint, or manually select one of the fan levels for manual control.
+- Added support for auto climate control using an external temperature sensor provided by HA or the ESP32
+  - Useful for models where the internal temperature control is not accurate, or when the control panel is mounted somewhere different from the area you want to control the temperature of
 - Ensured Extensibility: The component is designed to support future versions of controllers.
 
 
@@ -354,9 +358,6 @@ The BLE stack occupies a significant amount of flash memory. Combined with sever
 
 - **Support for Additional Controllers:**  
   Implement `HeaterController_*` classes for other controller types.
-  
-- **Unified Climate Component:**  
-  Integrate a climate component for standardized control.
   
 - **Code Refactoring:**  
   Allow configuration without buttons, switches, or numbers. Currently, if none of these are defined in the YAML, the C++ compiler complains about missing header files (e.g., `esphome/components/button/button.h`).
