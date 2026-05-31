@@ -89,10 +89,10 @@ class ResponseParser {
     }
 
     if (heater_class == HeaterClass::HEATER_AA_55 || heater_class == HeaterClass::HEATER_AA_66) {
-      state.supplyvoltage = (decrypted[11] + (decrypted[12] << 8)) / 10;
+      state.supplyvoltage = static_cast<float>((decrypted[11] + (decrypted[12] << 8))) / 10.0f;
     } else if (heater_class == HeaterClass::HEATER_AA_55_ENCRYPTED ||
-               heater_class == HeaterClass::HEATER_AA_66_ENCRYPTED) {
-      state.supplyvoltage = (decrypted[12] + (decrypted[11] << 8)) / 10;
+           heater_class == HeaterClass::HEATER_AA_66_ENCRYPTED) {
+      state.supplyvoltage = static_cast<float>((decrypted[12] + (decrypted[11] << 8))) / 10.0f;
     }
 
     if (heater_class == HeaterClass::HEATER_AA_55 || heater_class == HeaterClass::HEATER_AA_66) {
@@ -101,7 +101,7 @@ class ResponseParser {
     } else if (heater_class == HeaterClass::HEATER_AA_55_ENCRYPTED ||
                heater_class == HeaterClass::HEATER_AA_66_ENCRYPTED) {
       state.casetemp = (decrypted[14] + (decrypted[13] << 8));
-      state.cabtemp = (decrypted[33] + (decrypted[32] << 8)) / 10;
+      state.cabtemp = (decrypted[33] + (decrypted[32] << 8)) / 10.0f;
     }
 
     // encrypted types only
