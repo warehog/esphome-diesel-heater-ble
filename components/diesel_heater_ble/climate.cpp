@@ -91,7 +91,11 @@ void DieselHeaterClimate::sync_from_heater(const HeaterState &state) {
   }
 
   this->mode = (heater_on || this->climate_heat_requested_) ? climate::CLIMATE_MODE_HEAT : climate::CLIMATE_MODE_OFF;
-  this->action = this->is_heating_step_(state.runningstep) ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
+  if (this->mode == climate::CLIMATE_MODE_OFF) {
+    this->action = climate::CLIMATE_ACTION_OFF
+  } else {
+    this->action = this->is_heating_step_(state.runningstep) ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
+  }
 
   // Keep user control preference synced with real heater mode, except when running
   // the external-auto strategy that intentionally uses manual backend levels.
