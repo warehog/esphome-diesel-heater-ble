@@ -35,7 +35,7 @@ diesel_heater_ble:
 
 climate:
   - platform: diesel_heater_ble
-    name: "Diesel Heater"
+    name: "Climate"
     id: diesel_heater_climate
     external_temperature_timeout: 2h        # time at which it fall back to internal temperature, even while off/idle
     external_temperature_timeout_heating: 15min # time at which it fall back to internal temperature, while actively heating
