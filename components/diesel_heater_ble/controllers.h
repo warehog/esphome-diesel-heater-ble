@@ -21,7 +21,10 @@ class HeaterController {
   virtual std::vector<Request> get_auto_mode_command(HeaterState state) = 0;
 };
 
-class HeaterControllerAA55E : public HeaterController {
+class HeaterControllerAA : public HeaterController {
+ // It's assumed that AA55 and AA66 have the same command structure, whether encrypted or not.
+ // However specific heater controller classes are below for implementing differences as needed.
+
  public:
   std::vector<Request> change_mode_command(HeaterState state, uint8_t target_mode) {
     std::vector<Request> requests;
@@ -97,12 +100,22 @@ class HeaterControllerAA55E : public HeaterController {
   std::vector<Request> get_auto_mode_command(HeaterState state) override { return change_mode_command(state, 0x02); }
 };
 
+class HeaterControllerAA55E : public HeaterControllerAA {
+  // Specific implementation for AA55 Encrypted if needed in future.
+};
+
+class HeaterControllerAA66 : public HeaterControllerAA {
+  // Specific implementation for AA66 if needed in future.
+};
+
 class ControllerSelector {
  public:
   static HeaterController *get_controller(HeaterClass heater_class) {
     switch (heater_class) {
       case HeaterClass::HEATER_AA_55_ENCRYPTED:
         return new HeaterControllerAA55E();
+      case HeaterClass::HEATER_AA_66:
+        return new HeaterControllerAA66();
       default:
         return nullptr;
     }
