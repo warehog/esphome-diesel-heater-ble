@@ -1,4 +1,5 @@
 #include "heater.h"
+#include "climate.h"
 
 #ifdef USE_ESP32
 
@@ -120,7 +121,19 @@ void DieselHeaterBLE::on_notification_received(const std::vector<uint8_t> &data)
   }
 }
 
+void DieselHeaterBLE::update_climate(const HeaterState &new_state) {
+  if (this->climate_ == nullptr) {
+    return;
+  }
+
+  this->climate_->sync_from_heater(new_state);
+
+  this->climate_->publish_state();
+}
+
 void DieselHeaterBLE::update_sensors(const HeaterState &new_state) {
+  this->update_climate(new_state);
+
   if (running_state_ != nullptr && running_state_->state != new_state.runningstate) {
     if (this->power_switch_ != nullptr) {
       this->power_switch_->publish_state(new_state.runningstate);

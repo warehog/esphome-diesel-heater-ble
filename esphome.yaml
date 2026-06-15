@@ -12,6 +12,8 @@ esp32:
 # Enable logging
 logger:
 
+api:
+
 wifi:
   networks:
     - ssid: <ssid>
@@ -31,74 +33,96 @@ ble_client:
 diesel_heater_ble:
   ble_client_id: ble_client_id
 
+climate:
+  - platform: diesel_heater_ble
+    name: "Climate"
+    id: diesel_heater_climate
+    external_temperature_timeout: 2h        # time at which it fall back to internal temperature, even while off/idle
+    external_temperature_timeout_heating: 15min # time at which it fall back to internal temperature, while actively heating
+    external_temperature_fahrenheit: false
+    external_stage_gain: 2.0                # levels per degree C
+    external_off_error: -0.5                # degrees C (negative error = over temp setpoint)
+    external_auto_on_error: 1.0             # degrees C (positive error = under temp setpoint)
+    external_min_on_time: 10min             # minimum time to stay on once turned on
+    external_min_off_time: 20min            # minimum time to stay off once turned off
+    external_overshoot_hold: 3min           # time to hold overshoot before turning off
+    external_level_update_interval: 10s     # minimum interval to update level
+
 sensor:
-  platform: diesel_heater_ble
-  running_state:
-    name: "Running State"
-    id: running_state
-  error_code:
-    name: "Error Code"
-    id: error_code
-  running_step:
-    name: "Running Step"
-    id: running_step
-  altitude:
-    name: "Altitude"
-    id: altitude
-  running_mode:
-    name: "Running Mode"
-    id: running_mode
-  set_level:
-    name: "Set Level"
-    id: set_level
-  set_temp:
-    name: "Set Temp"
-    id: set_temp
-  supply_voltage:
-    name: "Supply Voltage"
-    id: supply_voltage
-  case_temp:
-    name: "Case Temp"
-    id: case_temp
-  cab_temp:
-    name: "Cab Temp"
-    id: cab_temp
-  start_time:
-    name: "Start Time"
-    id: start_time
-  auto_time:
-    name: "Auto Time"
-    id: auto_time
-  run_time:
-    name: "Run Time"
-    id: run_time
-  is_auto:
-    name: "Is Auto"
-    id: is_auto
-  language:
-    name: "Language"
-    id: language
-  temp_offset:
-    name: "Temp Offset"
-    id: temp_offset
-  tank_volume:
-    name: "Tank Volume"
-    id: tank_volume
-  oil_pump_type:
-    name: "Oil Pump Type"
-    id: oil_pump_type
-  rf433_on_off:
-    name: "RF433 On Off"
-    id: rf433_on_off
-  temp_unit:
-    name: "Temp Unit"
-    id: temp_unit
-  altitude_unit:
-    name: "Altitude Unit"
-    id: altitude_unit
-  automatic_heating:
-    name: "Automatic Heating"
-    id: automatic_heating
+  - platform: homeassistant
+    entity_id: sensor.my_external_temperature
+    id: my_external_temperature
+    filters:
+      - debounce: 10s      # adding heartbeat would defeat the timeout safety as it replays the last seen state endlessly
+    on_value:
+      - lambda: id(diesel_heater_climate).set_external_temperature(x);
+  - platform: diesel_heater_ble
+    running_state:
+      name: "Running State"
+      id: running_state
+    error_code:
+      name: "Error Code"
+      id: error_code
+    running_step:
+      name: "Running Step"
+      id: running_step
+    altitude:
+      name: "Altitude"
+      id: altitude
+    running_mode:
+      name: "Running Mode"
+      id: running_mode
+    set_level:
+      name: "Set Level"
+      id: set_level
+    set_temp:
+      name: "Set Temp"
+      id: set_temp
+    supply_voltage:
+      name: "Supply Voltage"
+      id: supply_voltage
+    case_temp:
+      name: "Case Temp"
+      id: case_temp
+    cab_temp:
+      name: "Cab Temp"
+      id: cab_temp
+    start_time:
+      name: "Start Time"
+      id: start_time
+    auto_time:
+      name: "Auto Time"
+      id: auto_time
+    run_time:
+      name: "Run Time"
+      id: run_time
+    is_auto:
+      name: "Is Auto"
+      id: is_auto
+    language:
+      name: "Language"
+      id: language
+    temp_offset:
+      name: "Temp Offset"
+      id: temp_offset
+    tank_volume:
+      name: "Tank Volume"
+      id: tank_volume
+    oil_pump_type:
+      name: "Oil Pump Type"
+      id: oil_pump_type
+    rf433_on_off:
+      name: "RF433 On Off"
+      id: rf433_on_off
+    temp_unit:
+      name: "Temp Unit"
+      id: temp_unit
+    altitude_unit:
+      name: "Altitude Unit"
+      id: altitude_unit
+    automatic_heating:
+      name: "Automatic Heating"
+      id: automatic_heating
   
 number:
   - platform: diesel_heater_ble
