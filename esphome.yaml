@@ -30,8 +30,13 @@ ble_client:
   id: ble_client_id
   mac_address: E0:4E:7A:89:68:D6
 
+time:
+  - platform: homeassistant
+    id: ha_time
+
 diesel_heater_ble:
   ble_client_id: ble_client_id
+  time_id: ha_time
 
 climate:
   - platform: diesel_heater_ble

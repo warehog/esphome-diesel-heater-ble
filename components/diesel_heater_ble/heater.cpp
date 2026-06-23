@@ -15,6 +15,7 @@ void DieselHeaterBLE::loop() {
       uint8_t data[8] = {0xaa, 0x55, 0x0c, 0x22, 0x01, 0x00, 0x00, 0x2f};
       this->ble_write_chr(this->parent()->get_gattc_if(), this->parent()->get_remote_bda(), this->handle_, data,
                           sizeof(data));
+      this->update_time();
     }
     this->update_sensors(this->state_);
   }
@@ -234,6 +235,22 @@ void DieselHeaterBLE::update_sensors(const HeaterState &new_state) {
   if (automatic_heating_ != nullptr && automatic_heating_->state != new_state.automaticheating) {
     automatic_heating_->publish_state(new_state.automaticheating);
     return;
+  }
+}
+
+void DieselHeaterBLE::update_time() {
+  if (this->controller_ == nullptr) {
+    return;
+  }
+  if (millis() - this->last_time_set_ > 60 * 60 * 1000 && this->time_ != nullptr) {
+    // Set time on heater once per hour
+    ESP_LOGD(TAG, "Attempting to set time on heater.");
+    auto now = this->time_->now();
+    if (now.is_valid()) {
+      ESP_LOGD(TAG, "Current time: %02d:%02d", now.hour, now.minute);
+      this->sent_requests(this->controller_->gen_time_command(now.hour, now.minute));
+      this->last_time_set_ = millis();
+    }
   }
 }
 
