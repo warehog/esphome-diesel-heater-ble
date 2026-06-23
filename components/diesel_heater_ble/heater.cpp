@@ -187,53 +187,55 @@ void DieselHeaterBLE::update_sensors(const HeaterState &new_state) {
     cab_temp_->publish_state(new_state.cabtemp);
     return;
   }
-  if (start_time_ != nullptr && start_time_->state != new_state.sttime) {
-    start_time_->publish_state(new_state.sttime);
-    return;
-  }
-  if (auto_time_ != nullptr && auto_time_->state != new_state.autotime) {
-    auto_time_->publish_state(new_state.autotime);
-    return;
-  }
-  if (run_time_ != nullptr && run_time_->state != new_state.runtime) {
-    run_time_->publish_state(new_state.runtime);
-    return;
-  }
-  if (is_auto_ != nullptr && is_auto_->state != new_state.isauto) {
-    is_auto_->publish_state(new_state.isauto);
-    return;
-  }
-  if (language_ != nullptr && language_->state != new_state.language) {
-    language_->publish_state(new_state.language);
-    return;
-  }
-  if (temp_offset_ != nullptr && temp_offset_->state != new_state.tempoffset) {
-    temp_offset_->publish_state(new_state.tempoffset);
-    return;
-  }
-  if (tank_volume_ != nullptr && tank_volume_->state != new_state.tankvolume) {
-    tank_volume_->publish_state(new_state.tankvolume);
-    return;
-  }
-  if (oil_pump_type_ != nullptr && oil_pump_type_->state != new_state.oilpumptype) {
-    oil_pump_type_->publish_state(new_state.oilpumptype);
-    return;
-  }
-  if (rf433_on_off_ != nullptr && rf433_on_off_->state != static_cast<float>(new_state.rf433onoff)) {
-    rf433_on_off_->publish_state(new_state.rf433onoff);
-    return;
-  }
-  if (temp_unit_ != nullptr && temp_unit_->state != new_state.tempunit) {
-    temp_unit_->publish_state(new_state.tempunit);
-    return;
-  }
-  if (altitude_unit_ != nullptr && altitude_unit_->state != new_state.altiunit) {
-    altitude_unit_->publish_state(new_state.altiunit);
-    return;
-  }
-  if (automatic_heating_ != nullptr && automatic_heating_->state != new_state.automaticheating) {
-    automatic_heating_->publish_state(new_state.automaticheating);
-    return;
+  if (new_state.extras.has_extras) {
+    if (start_time_ != nullptr && start_time_->state != new_state.extras.sttime) {
+      start_time_->publish_state(new_state.extras.sttime);
+      return;
+    }
+    if (auto_time_ != nullptr && auto_time_->state != new_state.extras.autotime) {
+      auto_time_->publish_state(new_state.extras.autotime);
+      return;
+    }
+    if (run_time_ != nullptr && run_time_->state != new_state.extras.runtime) {
+      run_time_->publish_state(new_state.extras.runtime);
+      return;
+    }
+    if (is_auto_ != nullptr && is_auto_->state != new_state.extras.isauto) {
+      is_auto_->publish_state(new_state.extras.isauto);
+      return;
+    }
+    if (language_ != nullptr && language_->state != new_state.extras.language) {
+      language_->publish_state(new_state.extras.language);
+      return;
+    }
+    if (temp_offset_ != nullptr && temp_offset_->state != new_state.extras.tempoffset) {
+      temp_offset_->publish_state(new_state.extras.tempoffset);
+      return;
+    }
+    if (tank_volume_ != nullptr && tank_volume_->state != new_state.extras.tankvolume) {
+      tank_volume_->publish_state(new_state.extras.tankvolume);
+      return;
+    }
+    if (oil_pump_type_ != nullptr && oil_pump_type_->state != new_state.extras.oilpumptype) {
+      oil_pump_type_->publish_state(new_state.extras.oilpumptype);
+      return;
+    }
+    if (rf433_on_off_ != nullptr && rf433_on_off_->state != static_cast<float>(new_state.extras.rf433onoff)) {
+      rf433_on_off_->publish_state(new_state.extras.rf433onoff);
+      return;
+    }
+    if (temp_unit_ != nullptr && temp_unit_->state != new_state.extras.tempunit) {
+      temp_unit_->publish_state(new_state.extras.tempunit);
+      return;
+    }
+    if (altitude_unit_ != nullptr && altitude_unit_->state != new_state.extras.altiunit) {
+      altitude_unit_->publish_state(new_state.extras.altiunit);
+      return;
+    }
+    if (automatic_heating_ != nullptr && automatic_heating_->state != new_state.extras.automaticheating) {
+      automatic_heating_->publish_state(new_state.extras.automaticheating);
+      return;
+    }
   }
 }
 
