@@ -10,6 +10,7 @@ namespace diesel_heater_ble {
 
 class HeaterController {
  public:
+  virtual std::vector<Request> gen_time_command(uint8_t hours, uint8_t minutes) = 0;
   virtual std::vector<Request> gen_power_command(HeaterState state, bool power) = 0;
   virtual std::vector<Request> gen_level_command(HeaterState state, uint8_t value) = 0;
   virtual std::vector<Request> gen_level_up_command(HeaterState state) = 0;
@@ -35,6 +36,12 @@ class HeaterControllerAA : public HeaterController {
   }
 
  public:
+  std::vector<Request> gen_time_command(uint8_t hours, uint8_t minutes) override {
+    std::vector<Request> requests;
+    requests.push_back(Request(0x0A, hours * 60 + minutes));
+    return requests;
+  }
+
   std::vector<Request> gen_power_command(HeaterState state, bool power) override {
     std::vector<Request> requests;
     if (state.runningstate != power) {
