@@ -77,9 +77,9 @@ class HeaterControllerAA : public HeaterController {
 
   std::vector<Request> gen_temp_up_command(HeaterState state) override {
     auto requests = get_auto_mode_command(state);
-    if (state.tempunit == 0x00 && state.settemp < 36) {
+    if (state.extras.tempunit == 0x00 && state.settemp < 36) {
       requests.push_back(Request(0x04, state.settemp + 1, 0x00));
-    } else if (state.tempunit == 0x01 && state.settemp < 97) {
+    } else if (state.extras.tempunit == 0x01 && state.settemp < 97) {
       requests.push_back(Request(0x04, state.settemp + 1, 0x00));
     }
     return requests;
@@ -87,9 +87,9 @@ class HeaterControllerAA : public HeaterController {
 
   std::vector<Request> gen_temp_down_command(HeaterState state) override {
     auto requests = get_auto_mode_command(state);
-    if (state.tempunit == 0x00 && state.settemp > 8) {
+    if (state.extras.tempunit == 0x00 && state.settemp > 8) {
       requests.push_back(Request(0x04, state.settemp - 1, 0x00));
-    } else if (state.tempunit == 0x01 && state.settemp > 46) {
+    } else if (state.extras.tempunit == 0x01 && state.settemp > 46) {
       requests.push_back(Request(0x04, state.settemp - 1, 0x00));
     }
     return requests;
