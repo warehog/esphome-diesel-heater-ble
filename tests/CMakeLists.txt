@@ -66,3 +66,21 @@ target_link_libraries(command_delivery_test PRIVATE diesel_heater_protocol)
 target_compile_options(command_delivery_test PRIVATE -Wall -Wextra -Wpedantic)
 
 add_test(NAME command_delivery_test COMMAND command_delivery_test)
+
+add_executable(entity_control_test entity_control_test.cpp)
+target_compile_features(entity_control_test PRIVATE cxx_std_17)
+target_link_libraries(entity_control_test PRIVATE diesel_heater_protocol)
+target_compile_options(entity_control_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME entity_control_test COMMAND entity_control_test)
+
+add_executable(climate_control_session_test climate_control_session_test.cpp)
+target_compile_features(climate_control_session_test PRIVATE cxx_std_17)
+target_link_libraries(climate_control_session_test PRIVATE diesel_heater_protocol)
+target_compile_options(climate_control_session_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME climate_control_session_test COMMAND climate_control_session_test)
+add_test(NAME entity_static_guard COMMAND ${CMAKE_COMMAND}
+  -DCOMPONENT_DIR=${CMAKE_CURRENT_LIST_DIR}/../components/diesel_heater_ble
+  -P ${CMAKE_CURRENT_LIST_DIR}/entity_static_guard.cmake
+)

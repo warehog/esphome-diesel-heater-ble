@@ -74,17 +74,19 @@ template<typename T> void publish_number_field(number::Number *number, const Sta
 
 void DieselHeaterBLE::loop() {
   const uint32_t now = millis();
+  this->dispatch_delivery_events_();
   this->delivery_.tick(now, [this](const CommandFrame &frame) {
     CommandFrame writable_frame = frame;
     return this->ble_write_chr(this->parent()->get_gattc_if(), this->parent()->get_remote_bda(), this->handle_,
                                writable_frame.data(), writable_frame.size());
   });
+  this->dispatch_delivery_events_();
   this->log_delivery_failure_();
   if (this->lifecycle_.connected()) {
     if (now - this->last_request_ >= 1000) {
       const ProtocolDriver *driver = this->selection_.driver();
       if (driver != nullptr) {
-        const CommandAdmission admission = this->admit_command_(capability_bits(Capability::STATUS), true);
+        const CommandAdmission admission = this->lifecycle_.admit(capability_bits(Capability::STATUS), true);
         if (admission == CommandAdmission::READY) {
           const CommandBatch batch = driver->status(this->passkey_);
           const DeliveryEnqueueResult result = this->delivery_.enqueue_poll(batch);
@@ -92,7 +94,7 @@ void DieselHeaterBLE::loop() {
             this->last_request_ = now;
           this->log_delivery_enqueue_(result);
         } else {
-          this->dispatch_command_(admission, nullptr);
+          this->log_admission_rejection_(admission);
         }
       } else if (this->selection_.should_probe()) {
         // App-derived shared discovery probe: configured passkey, command 1,
@@ -236,19 +238,30 @@ void DieselHeaterBLE::on_notification_received(const std::vector<uint8_t> &data)
   this->last_update_ = now;
 }
 
-CommandAdmission DieselHeaterBLE::admit_command_(Capabilities required_capabilities, bool value_valid) {
-  const CommandAdmission admission = this->lifecycle_.admit(required_capabilities, value_valid);
+EntityCommandResult DieselHeaterBLE::admit_command_(EntityOperation operation, float value) {
+  const CommandAdmission admission =
+      this->lifecycle_.admit(EntityControlPolicy::required_capabilities(operation), EntityControlPolicy::valid(operation, value));
   if (admission != CommandAdmission::READY) this->log_admission_rejection_(admission);
-  return admission;
+  return EntityControlPolicy::from_admission(admission);
 }
 
-void DieselHeaterBLE::dispatch_command_(CommandAdmission admission, const CommandBatch *batch) {
-  if (admission != CommandAdmission::READY) return;
+EntityCommandResult DieselHeaterBLE::dispatch_command_(EntityCommandResult admission, const CommandBatch *batch,
+                                                        uint32_t transaction_id) {
+  if (admission != EntityCommandResult::QUEUED) return admission;
   if (batch == nullptr || !batch->sendable()) {
     if (batch != nullptr) this->log_batch_rejection_(batch->result());
-    return;
+    return batch == nullptr ? EntityCommandResult::DELIVERY_REJECTED : EntityControlPolicy::from_batch(batch->result());
   }
-  this->log_delivery_enqueue_(this->delivery_.enqueue_control(*batch));
+  const DeliveryEnqueueResult result = this->delivery_.enqueue_control(*batch, transaction_id);
+  this->log_delivery_enqueue_(result);
+  return EntityControlPolicy::from_delivery(result);
+}
+
+void DieselHeaterBLE::dispatch_delivery_events_() {
+  DeliveryEvent event;
+  while (this->delivery_.consume_event(event)) {
+    if (this->climate_ != nullptr) this->climate_->on_control_delivery(event.tag, event.success);
+  }
 }
 
 bool DieselHeaterBLE::state_matches_current_command_(const HeaterState &state) const {
@@ -431,97 +444,70 @@ void DieselHeaterBLE::update_sensors(const HeaterState &new_state) {
   this->availability_.mark_published();
 }
 
-void DieselHeaterBLE::on_power_level_number(float value) {
+EntityCommandResult DieselHeaterBLE::on_power_level_number(float value, uint32_t transaction_id) {
   const ProtocolDriver *driver = this->selection_.driver();
-  const bool valid_value = std::isfinite(value) && value >= 1.0f && value <= 10.0f && std::floor(value) == value;
-  const CommandAdmission admission =
-      this->admit_command_(capability_bits(Capability::MODE) | Capability::MANUAL_LEVEL, valid_value);
-  if (admission != CommandAdmission::READY) {
-    this->dispatch_command_(admission, nullptr);
-    return;
+  const EntityCommandResult admission = this->admit_command_(EntityOperation::MANUAL_LEVEL, value);
+  if (admission != EntityCommandResult::QUEUED) {
+    return this->dispatch_command_(admission, nullptr);
   }
   const CommandBatch batch = driver->manual_level(this->state_, this->passkey_, static_cast<uint8_t>(value));
-  this->dispatch_command_(admission, &batch);
+  return this->dispatch_command_(admission, &batch, transaction_id);
 }
 
-void DieselHeaterBLE::on_temp_number(float value) {
+EntityCommandResult DieselHeaterBLE::on_temp_number(float value, uint32_t transaction_id) {
   const ProtocolDriver *driver = this->selection_.driver();
-  const bool valid_value = std::isfinite(value) && value >= 8.0f && value <= 36.0f;
-  const CommandAdmission admission =
-      this->admit_command_(capability_bits(Capability::MODE) | Capability::SET_TEMPERATURE, valid_value);
-  if (admission != CommandAdmission::READY) {
-    this->dispatch_command_(admission, nullptr);
-    return;
+  const EntityCommandResult admission = this->admit_command_(EntityOperation::TEMPERATURE_C, value);
+  if (admission != EntityCommandResult::QUEUED) {
+    return this->dispatch_command_(admission, nullptr);
   }
   const CommandBatch batch = driver->temperature_c(this->state_, this->passkey_, value);
-  this->dispatch_command_(admission, &batch);
+  return this->dispatch_command_(admission, &batch, transaction_id);
 }
 
-void DieselHeaterBLE::on_power_switch(bool state) {
+EntityCommandResult DieselHeaterBLE::on_power_switch(bool state, uint32_t transaction_id) {
   const ProtocolDriver *driver = this->selection_.driver();
-  const CommandAdmission admission = this->admit_command_(capability_bits(Capability::POWER), true);
-  if (admission != CommandAdmission::READY) {
-    this->dispatch_command_(admission, nullptr);
-    return;
+  const EntityCommandResult admission = this->admit_command_(EntityOperation::POWER);
+  if (admission != EntityCommandResult::QUEUED) {
+    return this->dispatch_command_(admission, nullptr);
   }
   const CommandBatch batch = driver->power(this->state_, this->passkey_, state);
-  this->dispatch_command_(admission, &batch);
+  return this->dispatch_command_(admission, &batch, transaction_id);
 }
 
-void DieselHeaterBLE::on_level_up_button_press() {
-  const ProtocolDriver *driver = this->selection_.driver();
-  const bool valid_value = this->state_.manual_level.valid && this->state_.manual_level.value < 10;
-  const CommandAdmission admission =
-      this->admit_command_(capability_bits(Capability::MODE) | Capability::MANUAL_LEVEL, valid_value);
-  if (admission != CommandAdmission::READY) {
-    this->dispatch_command_(admission, nullptr);
-    return;
+EntityCommandResult DieselHeaterBLE::on_level_up_button_press() {
+  if (!this->state_.manual_level.valid) {
+    const EntityCommandResult admission = this->admit_command_(EntityOperation::MANUAL_LEVEL);
+    return admission == EntityCommandResult::QUEUED ? EntityCommandResult::STATE_UNAVAILABLE : admission;
   }
-  const CommandBatch batch = driver->manual_level(this->state_, this->passkey_, this->state_.manual_level.value + 1);
-  this->dispatch_command_(admission, &batch);
+  return this->on_power_level_number(static_cast<float>(this->state_.manual_level.value) + 1.0f);
 }
 
-void DieselHeaterBLE::on_level_down_button_press() {
-  const ProtocolDriver *driver = this->selection_.driver();
-  const bool valid_value = this->state_.manual_level.valid && this->state_.manual_level.value > 1;
-  const CommandAdmission admission =
-      this->admit_command_(capability_bits(Capability::MODE) | Capability::MANUAL_LEVEL, valid_value);
-  if (admission != CommandAdmission::READY) {
-    this->dispatch_command_(admission, nullptr);
-    return;
+EntityCommandResult DieselHeaterBLE::on_level_down_button_press() {
+  if (!this->state_.manual_level.valid) {
+    const EntityCommandResult admission = this->admit_command_(EntityOperation::MANUAL_LEVEL);
+    return admission == EntityCommandResult::QUEUED ? EntityCommandResult::STATE_UNAVAILABLE : admission;
   }
-  const CommandBatch batch = driver->manual_level(this->state_, this->passkey_, this->state_.manual_level.value - 1);
-  this->dispatch_command_(admission, &batch);
+  return this->on_power_level_number(static_cast<float>(this->state_.manual_level.value) - 1.0f);
 }
 
-void DieselHeaterBLE::on_temp_up_button_press() {
-  const ProtocolDriver *driver = this->selection_.driver();
-  const bool valid_value = this->state_.target_temperature_c.valid &&
-                           this->state_.target_temperature_c.value < 36.0f;
-  const CommandAdmission admission =
-      this->admit_command_(capability_bits(Capability::MODE) | Capability::SET_TEMPERATURE, valid_value);
-  if (admission != CommandAdmission::READY) {
-    this->dispatch_command_(admission, nullptr);
-    return;
+EntityCommandResult DieselHeaterBLE::on_temp_up_button_press() {
+  if (!this->state_.target_temperature_c.valid) {
+    const EntityCommandResult admission = this->admit_command_(EntityOperation::TEMPERATURE_C);
+    return admission == EntityCommandResult::QUEUED ? EntityCommandResult::STATE_UNAVAILABLE : admission;
   }
-  const CommandBatch batch =
-      driver->temperature_c(this->state_, this->passkey_, this->state_.target_temperature_c.value + 1.0f);
-  this->dispatch_command_(admission, &batch);
+  return this->on_temp_number(this->state_.target_temperature_c.value + 1.0f);
 }
 
-void DieselHeaterBLE::on_temp_down_button_press() {
-  const ProtocolDriver *driver = this->selection_.driver();
-  const bool valid_value = this->state_.target_temperature_c.valid &&
-                           this->state_.target_temperature_c.value > 8.0f;
-  const CommandAdmission admission =
-      this->admit_command_(capability_bits(Capability::MODE) | Capability::SET_TEMPERATURE, valid_value);
-  if (admission != CommandAdmission::READY) {
-    this->dispatch_command_(admission, nullptr);
-    return;
+EntityCommandResult DieselHeaterBLE::on_temp_down_button_press() {
+  if (!this->state_.target_temperature_c.valid) {
+    const EntityCommandResult admission = this->admit_command_(EntityOperation::TEMPERATURE_C);
+    return admission == EntityCommandResult::QUEUED ? EntityCommandResult::STATE_UNAVAILABLE : admission;
   }
-  const CommandBatch batch =
-      driver->temperature_c(this->state_, this->passkey_, this->state_.target_temperature_c.value - 1.0f);
-  this->dispatch_command_(admission, &batch);
+  return this->on_temp_number(this->state_.target_temperature_c.value - 1.0f);
+}
+
+EntityCommandResult DieselHeaterBLE::admit_climate_strategy(ClimateStrategy strategy) const {
+  return EntityControlPolicy::admit(this->lifecycle_, strategy);
 }
 
 }  // namespace diesel_heater_ble

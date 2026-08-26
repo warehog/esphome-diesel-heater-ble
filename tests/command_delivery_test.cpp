@@ -9,6 +9,7 @@ using esphome::diesel_heater_ble::CommandDelivery;
 using esphome::diesel_heater_ble::CommandFrame;
 using esphome::diesel_heater_ble::CommandResult;
 using esphome::diesel_heater_ble::DeliveryEnqueueResult;
+using esphome::diesel_heater_ble::DeliveryEvent;
 using esphome::diesel_heater_ble::DeliveryFailure;
 using esphome::diesel_heater_ble::DeliveryPhase;
 
@@ -225,6 +226,114 @@ void test_millis_wraparound_and_disconnect_clear() {
   assert(transport.writes.size() == 2);  // Disconnect did not submit retained work.
 }
 
+void test_tagged_controls_report_completion_and_async_failure() {
+  CommandDelivery delivery;
+  FakeClock clock;
+  FakeTransport transport;
+  assert(delivery.enqueue_control(batch({3}), 41) == DeliveryEnqueueResult::QUEUED);
+  tick(delivery, clock, transport);
+  complete(delivery, clock);
+  acknowledge(delivery, clock, 3);
+  DeliveryEvent event;
+  assert(delivery.consume_event(event));
+  assert(event.tag == 41 && event.success);
+
+  assert(delivery.enqueue_control(batch({4}), 42) == DeliveryEnqueueResult::QUEUED);
+  for (uint8_t attempt = 0; attempt <= CommandDelivery::kMaxRetries; ++attempt) {
+    tick(delivery, clock, transport);
+    complete(delivery, clock);
+    clock.now += CommandDelivery::kAcknowledgementTimeoutMs;
+    tick(delivery, clock, transport);
+  }
+  assert(delivery.consume_event(event));
+  assert(event.tag == 42 && !event.success);
+}
+
+void test_partial_tagged_enqueue_can_be_cancelled_before_any_write() {
+  CommandDelivery delivery;
+  FakeClock clock;
+  FakeTransport transport;
+  assert(delivery.enqueue_control(batch({1})) == DeliveryEnqueueResult::QUEUED);
+  assert(delivery.enqueue_control(batch({2})) == DeliveryEnqueueResult::QUEUED);
+  assert(delivery.enqueue_control(batch({3})) == DeliveryEnqueueResult::QUEUED);
+  assert(delivery.enqueue_control(batch({4}), 70) == DeliveryEnqueueResult::QUEUED);
+  assert(delivery.enqueue_control(batch({5}), 70) == DeliveryEnqueueResult::QUEUE_FULL);
+  assert(delivery.cancel_pending_tag(70) == 1);
+  assert(delivery.queued_operations() == 3);
+  tick(delivery, clock, transport);
+  assert(transport.writes.size() == 1 && transport.writes[0][4] == 1);
+}
+
+void test_terminal_tagged_failure_cancels_later_members_but_keeps_unrelated_work() {
+  CommandDelivery delivery;
+  FakeClock clock;
+  FakeTransport failed_transport;
+  failed_transport.accept_writes = false;
+  assert(delivery.enqueue_control(batch({3}), 71) == DeliveryEnqueueResult::QUEUED);
+  assert(delivery.enqueue_control(batch({4}), 71) == DeliveryEnqueueResult::QUEUED);
+  assert(delivery.enqueue_control(batch({5})) == DeliveryEnqueueResult::QUEUED);
+  for (uint8_t attempt = 0; attempt <= CommandDelivery::kMaxRetries; ++attempt)
+    tick(delivery, clock, failed_transport);
+  DeliveryEvent event;
+  assert(delivery.consume_event(event));
+  assert(event.tag == 71 && !event.success);
+  assert(!delivery.consume_event(event));  // Later member has no second failure event.
+  assert(delivery.queued_operations() == 1);
+  FakeTransport transport;
+  tick(delivery, clock, transport);
+  assert(transport.writes.size() == 1 && transport.writes[0][4] == 5);
+}
+
+void test_tagged_ack_timeout_write_timeout_and_disconnect_each_report_one_failure() {
+  CommandDelivery ack_timeout;
+  FakeClock clock;
+  FakeTransport transport;
+  assert(ack_timeout.enqueue_control(batch({3}), 72) == DeliveryEnqueueResult::QUEUED);
+  assert(ack_timeout.enqueue_control(batch({4}), 72) == DeliveryEnqueueResult::QUEUED);
+  for (uint8_t attempt = 0; attempt <= CommandDelivery::kMaxRetries; ++attempt) {
+    tick(ack_timeout, clock, transport);
+    complete(ack_timeout, clock);
+    clock.now += CommandDelivery::kAcknowledgementTimeoutMs;
+    tick(ack_timeout, clock, transport);
+  }
+  DeliveryEvent event;
+  assert(ack_timeout.consume_event(event) && event.tag == 72 && !event.success);
+  assert(!ack_timeout.consume_event(event));
+  assert(ack_timeout.queued_operations() == 0);
+
+  CommandDelivery write_timeout;
+  FakeClock timeout_clock;
+  assert(write_timeout.enqueue_control(batch({3}), 73) == DeliveryEnqueueResult::QUEUED);
+  tick(write_timeout, timeout_clock, transport);
+  timeout_clock.now += CommandDelivery::kWriteCompletionTimeoutMs;
+  tick(write_timeout, timeout_clock, transport);
+  assert(write_timeout.consume_event(event) && event.tag == 73 && !event.success);
+
+  CommandDelivery disconnected;
+  assert(disconnected.enqueue_control(batch({3}), 74) == DeliveryEnqueueResult::QUEUED);
+  assert(disconnected.enqueue_control(batch({4}), 74) == DeliveryEnqueueResult::QUEUED);
+  disconnected.disconnect();
+  assert(disconnected.consume_event(event) && event.tag == 74 && !event.success);
+  assert(!disconnected.consume_event(event));
+}
+
+void test_tagged_success_events_are_one_per_accepted_operation() {
+  CommandDelivery delivery;
+  FakeClock clock;
+  FakeTransport transport;
+  assert(delivery.enqueue_control(batch({3}), 75) == DeliveryEnqueueResult::QUEUED);
+  assert(delivery.enqueue_control(batch({4}), 75) == DeliveryEnqueueResult::QUEUED);
+  for (const uint8_t command : {3, 4}) {
+    tick(delivery, clock, transport);
+    complete(delivery, clock);
+    acknowledge(delivery, clock, command);
+  }
+  DeliveryEvent event;
+  assert(delivery.consume_event(event) && event.tag == 75 && event.success);
+  assert(delivery.consume_event(event) && event.tag == 75 && event.success);
+  assert(!delivery.consume_event(event));
+}
+
 }  // namespace
 
 int main() {
@@ -234,5 +343,10 @@ int main() {
   test_overflow_dependent_ordering_and_poll_fairness();
   test_missing_write_completion_blocks_without_retry_and_disconnect_recovers();
   test_millis_wraparound_and_disconnect_clear();
+  test_tagged_controls_report_completion_and_async_failure();
+  test_partial_tagged_enqueue_can_be_cancelled_before_any_write();
+  test_terminal_tagged_failure_cancels_later_members_but_keeps_unrelated_work();
+  test_tagged_ack_timeout_write_timeout_and_disconnect_each_report_one_failure();
+  test_tagged_success_events_are_one_per_accepted_operation();
   return 0;
 }

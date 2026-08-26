@@ -18,6 +18,7 @@
 #include "protocol_aa.h"
 #include "availability.h"
 #include "command_delivery.h"
+#include "entity_control.h"
 #include "lifecycle.h"
 #include "state.h"
 
@@ -72,21 +73,28 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
   void set_temp_up_button(button::Button *button) { temp_up_button_ = button; }
   void set_temp_down_button(button::Button *button) { temp_down_button_ = button; }
 
-  void on_level_up_button_press();
-  void on_level_down_button_press();
-  void on_temp_up_button_press();
-  void on_temp_down_button_press();
+  EntityCommandResult on_level_up_button_press();
+  EntityCommandResult on_level_down_button_press();
+  EntityCommandResult on_temp_up_button_press();
+  EntityCommandResult on_temp_down_button_press();
 
   // Number setters
   void set_power_level_number(number::Number *number) { power_level_number_ = number; availability_.register_entity(AvailabilityEntity::POWER_LEVEL_NUMBER); }
-  void on_power_level_number(float value);
+  EntityCommandResult on_power_level_number(float value, uint32_t transaction_id = 0);
 
   void set_set_temp_number(number::Number *number) { set_temp_number_ = number; availability_.register_entity(AvailabilityEntity::SET_TEMP_NUMBER); }
-  void on_temp_number(float value);
+  EntityCommandResult on_temp_number(float value, uint32_t transaction_id = 0);
 
   // Switch setter
   void set_power_switch(switch_::Switch *sw) { power_switch_ = sw; }
-  void on_power_switch(bool state);
+  EntityCommandResult on_power_switch(bool state, uint32_t transaction_id = 0);
+
+  // Climate checks a complete strategy before it constructs a multi-command
+  // sequence, so unsupported capabilities cannot produce partial controls.
+  EntityCommandResult admit_climate_strategy(ClimateStrategy strategy) const;
+  void cancel_pending_climate_transaction(uint32_t transaction_id) {
+    this->delivery_.cancel_pending_tag(transaction_id);
+  }
 
   // Climate setter
   void set_climate(DieselHeaterClimate *climate) { climate_ = climate; }
@@ -96,8 +104,9 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
   void set_passkey(uint16_t passkey) { this->passkey_ = passkey; }
 
  protected:
-  CommandAdmission admit_command_(Capabilities required_capabilities, bool value_valid);
-  void dispatch_command_(CommandAdmission admission, const CommandBatch *batch);
+  EntityCommandResult admit_command_(EntityOperation operation, float value = 0.0f);
+  EntityCommandResult dispatch_command_(EntityCommandResult admission, const CommandBatch *batch, uint32_t transaction_id = 0);
+  void dispatch_delivery_events_();
   bool state_matches_current_command_(const HeaterState &state) const;
   void clear_connection_state_();
   void publish_unavailable_entities_(AvailabilityMask entities);

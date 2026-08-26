@@ -36,19 +36,34 @@ enum class DeliveryPhase : uint8_t {
   TRANSPORT_BLOCKED,
 };
 
+// A control operation is complete only after every frame in its batch has a
+// matching response. Tags let the runtime roll back a higher-level request
+// when its delivery eventually fails; poll operations deliberately have tag 0.
+struct DeliveryEvent {
+  uint32_t tag{0};
+  bool success{false};
+};
+
 class CommandDelivery {
+ private:
+  struct Operation {
+    CommandBatch batch{};
+    bool poll{false};
+    uint32_t tag{0};
+  };
+
  public:
   static constexpr std::size_t kQueueCapacity = 4;
   static constexpr uint8_t kMaxRetries = 2;
   static constexpr uint32_t kWriteCompletionTimeoutMs = 1000;
   static constexpr uint32_t kAcknowledgementTimeoutMs = 1500;
 
-  DeliveryEnqueueResult enqueue_control(const CommandBatch &batch) {
+  DeliveryEnqueueResult enqueue_control(const CommandBatch &batch, uint32_t tag = 0) {
     // A not-yet-written poll has no user-visible effect, so a newly requested
     // control replaces it. An already submitted poll remains in flight and is
     // allowed to finish; no second write may overlap it.
     if (this->phase_ == DeliveryPhase::IDLE) this->remove_pending_polls_();
-    return this->enqueue_(batch, false);
+    return this->enqueue_(batch, false, tag);
   }
 
   // Permit one poll only when no operation exists. This avoids a polling
@@ -57,7 +72,7 @@ class CommandDelivery {
   DeliveryEnqueueResult enqueue_poll(const CommandBatch &batch) {
     if (this->phase_ == DeliveryPhase::TRANSPORT_BLOCKED) return DeliveryEnqueueResult::TRANSPORT_BLOCKED;
     if (!this->empty() || this->phase_ != DeliveryPhase::IDLE) return DeliveryEnqueueResult::POLL_SUPPRESSED;
-    return this->enqueue_(batch, true);
+    return this->enqueue_(batch, true, 0);
   }
 
   template<typename Writer> void tick(uint32_t now, Writer &&writer) {
@@ -67,9 +82,14 @@ class CommandDelivery {
     if (this->phase_ == DeliveryPhase::WRITE_PENDING &&
         elapsed_(now, this->write_started_at_) >= kWriteCompletionTimeoutMs) {
       this->block_transport_(DeliveryFailure::WRITE_COMPLETION_TIMEOUT);
+      return;
     }
     if (this->phase_ == DeliveryPhase::AWAITING_ACK && elapsed_(now, this->awaiting_since_) >= kAcknowledgementTimeoutMs) {
+      const std::size_t queued_before = this->size_;
       this->retry_or_fail_(DeliveryFailure::ACK_TIMEOUT);
+      // A retry may immediately resubmit this same operation. A terminal
+      // failure must not fall through and submit the next tagged operation.
+      if (this->size_ != queued_before) return;
     }
     if (this->phase_ != DeliveryPhase::IDLE || this->empty()) return;
 
@@ -117,7 +137,10 @@ class CommandDelivery {
   // Ends the connection generation. Both queued and in-flight work belongs to
   // that generation and must not be retried after reconnect.
   void disconnect() {
-    if (!this->empty() || this->phase_ != DeliveryPhase::IDLE) this->last_failure_ = DeliveryFailure::DISCONNECTED;
+    if (!this->empty() || this->phase_ != DeliveryPhase::IDLE) {
+      this->last_failure_ = DeliveryFailure::DISCONNECTED;
+      this->fail_all_tagged_();
+    }
     this->head_ = 0;
     this->size_ = 0;
     this->phase_ = DeliveryPhase::IDLE;
@@ -137,21 +160,50 @@ class CommandDelivery {
   DeliveryFailure last_failure() const { return this->last_failure_; }
   uint32_t awaiting_since() const { return this->awaiting_since_; }
   const CommandFrame *current_frame() const { return this->current_frame_(); }
+  bool consume_event(DeliveryEvent &event) {
+    if (this->event_size_ == 0) return false;
+    event = this->events_[this->event_head_];
+    this->event_head_ = (this->event_head_ + 1) % kQueueCapacity;
+    --this->event_size_;
+    return true;
+  }
+
+  // Remove not-yet-submitted controls belonging to a transaction while
+  // retaining every unrelated operation in FIFO order. If a write is already
+  // in flight it cannot safely be withdrawn, but later matching operations
+  // are still removed. Callers use this after a synchronous partial enqueue.
+  std::size_t cancel_pending_tag(uint32_t tag) {
+    if (tag == 0 || this->empty()) return 0;
+    const bool current_submitted = this->phase_ == DeliveryPhase::WRITE_PENDING ||
+                                   this->phase_ == DeliveryPhase::AWAITING_ACK;
+    std::array<Operation, kQueueCapacity> retained{};
+    std::size_t retained_size = 0;
+    std::size_t removed = 0;
+    for (std::size_t offset = 0; offset < this->size_; ++offset) {
+      const Operation &operation = this->queue_[(this->head_ + offset) % kQueueCapacity];
+      const bool keep_current = current_submitted && offset == 0;
+      if (!keep_current && operation.tag == tag) {
+        ++removed;
+      } else {
+        retained[retained_size++] = operation;
+      }
+    }
+    this->queue_ = retained;
+    this->head_ = 0;
+    this->size_ = retained_size;
+    if (!current_submitted) this->frame_index_ = 0;
+    return removed;
+  }
 
  private:
-  struct Operation {
-    CommandBatch batch{};
-    bool poll{false};
-  };
-
   static uint32_t elapsed_(uint32_t now, uint32_t then) { return now - then; }
 
-  DeliveryEnqueueResult enqueue_(const CommandBatch &batch, bool poll) {
+  DeliveryEnqueueResult enqueue_(const CommandBatch &batch, bool poll, uint32_t tag) {
     if (this->phase_ == DeliveryPhase::TRANSPORT_BLOCKED) return DeliveryEnqueueResult::TRANSPORT_BLOCKED;
     if (!batch.sendable()) return DeliveryEnqueueResult::INVALID_BATCH;
     if (this->size_ == kQueueCapacity) return DeliveryEnqueueResult::QUEUE_FULL;
     const std::size_t tail = (this->head_ + this->size_) % kQueueCapacity;
-    this->queue_[tail] = {batch, poll};
+    this->queue_[tail] = {batch, poll, tag};
     ++this->size_;
     return DeliveryEnqueueResult::QUEUED;
   }
@@ -189,18 +241,23 @@ class CommandDelivery {
     ++this->frame_index_;
     this->retries_ = 0;
     this->phase_ = DeliveryPhase::IDLE;
-    if (this->frame_index_ >= batch.size()) this->pop_current_();
+    if (this->frame_index_ >= batch.size()) this->pop_current_(true);
   }
 
   void finish_current_(DeliveryFailure failure) {
     this->last_failure_ = failure;
     this->phase_ = DeliveryPhase::IDLE;
     this->retries_ = 0;
-    this->pop_current_();
+    const uint32_t failed_tag = this->empty() ? 0 : this->queue_[this->head_].tag;
+    this->pop_current_(false);
+    // Exactly one failure event represents a tagged transaction. Later
+    // members cannot execute after its first terminal failure.
+    this->cancel_pending_tag(failed_tag);
   }
 
   void block_transport_(DeliveryFailure failure) {
     this->last_failure_ = failure;
+    this->fail_all_tagged_();
     this->head_ = 0;
     this->size_ = 0;
     this->frame_index_ = 0;
@@ -208,16 +265,41 @@ class CommandDelivery {
     this->phase_ = DeliveryPhase::TRANSPORT_BLOCKED;
   }
 
-  void pop_current_() {
+  void push_event_(uint32_t tag, bool success) {
+    if (tag == 0 || this->event_size_ == kQueueCapacity) return;
+    const std::size_t tail = (this->event_head_ + this->event_size_) % kQueueCapacity;
+    this->events_[tail] = {tag, success};
+    ++this->event_size_;
+  }
+
+  void fail_all_tagged_() {
+    for (std::size_t offset = 0; offset < this->size_; ++offset) {
+      const uint32_t tag = this->queue_[(this->head_ + offset) % kQueueCapacity].tag;
+      bool seen = false;
+      for (std::size_t earlier = 0; earlier < offset; ++earlier) {
+        if (this->queue_[(this->head_ + earlier) % kQueueCapacity].tag == tag) {
+          seen = true;
+          break;
+        }
+      }
+      if (!seen) this->push_event_(tag, false);
+    }
+  }
+
+  void pop_current_(bool success) {
     if (this->empty()) return;
+    this->push_event_(this->queue_[this->head_].tag, success);
     this->head_ = (this->head_ + 1) % kQueueCapacity;
     --this->size_;
     this->frame_index_ = 0;
   }
 
   std::array<Operation, kQueueCapacity> queue_{};
+  std::array<DeliveryEvent, kQueueCapacity> events_{};
   std::size_t head_{0};
   std::size_t size_{0};
+  std::size_t event_head_{0};
+  std::size_t event_size_{0};
   uint8_t frame_index_{0};
   uint8_t retries_{0};
   DeliveryPhase phase_{DeliveryPhase::IDLE};

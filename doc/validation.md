@@ -501,3 +501,62 @@ bytes of image payload, 655,904 bytes padded, and 1,179,104 bytes of headroom.
 No compatible heater or BLE adapter was available: multi-frame level/
 temperature commands, reconnect during a command, and timeout recovery remain
 hardware-validation pending.
+
+## T08 capability-aware entity and climate audit (code complete, hardware validation pending)
+
+`entity_control.h` is the dependency-free runtime policy shared by entity
+entry points and host tests. It defines normalized manual-level (1--10) and
+temperature (8--36 °C) ranges, required capabilities for power, manual-level,
+and temperature operations, and the complete capability sets required by
+internal thermostat, external staged, and manual climate strategies. Entity
+calls now return explicit outcomes for lifecycle rejection, unavailable
+capabilities or state, invalid values, unsupported driver batches, and
+delivery rejection. A queued request is not a state update: switch, number,
+and climate state remain owned by the next confirmed parsed response.
+
+Climate requests now use `ClimateControlRuntime`, a dependency-free runtime
+seam around `ClimateControlSession`. It normalizes external samples, snapshots
+automation intent and external-control timers, commits a candidate only after
+every command has been accepted by the delivery FIFO, and receives tagged
+completion/failure events from `CommandDelivery`. If a later synchronous
+enqueue is rejected, matching queued work is removed before rollback. A later
+write failure, acknowledgement timeout, transport timeout, or disconnect
+discards all remaining same-transaction work and restores that snapshot. This
+applies to mode, fan-auto, manual-level, target, external start/stop/staging,
+and the external-to-internal fallback. Climate mode, target, and action remain
+projections of a confirmed parsed heater state; automation intent is never
+published optimistically.
+
+Non-finite external sensor samples and disconnected or unconfirmed sessions
+therefore produce no control write. The test-only static guard now also scans
+`entity_control.h` and `climate_session.h`, case-insensitively rejecting direct
+entity includes of protocol implementation headers and AA headers/checksums,
+raw identifiers, packet/frame, or wire details.
+
+The following completed successfully on 2026-08-26 with CMake 3.31.6, GNU C++
+14.2.0, ESPHome 2026.8.1, ESP-IDF 5.5.5, and ESP32 GCC 14.2.0:
+
+```sh
+cmake -S tests -B /tmp/diesel-heater-host-tests-t08
+cmake --build /tmp/diesel-heater-host-tests-t08 --parallel
+ctest --test-dir /tmp/diesel-heater-host-tests-t08 --output-on-failure
+cmake -S tests -B /tmp/diesel-heater-host-asan-t08 -DENABLE_SANITIZERS=ON
+cmake --build /tmp/diesel-heater-host-asan-t08 --parallel
+ctest --test-dir /tmp/diesel-heater-host-asan-t08 --output-on-failure
+.venv/bin/esphome config tests/esphome-local.yaml
+.venv/bin/esphome compile tests/esphome-local.yaml
+.venv/bin/esphome config tests/esphome-minimal.yaml
+.venv/bin/esphome compile tests/esphome-minimal.yaml
+git diff --check
+```
+
+Both host suites passed 9/9, including the static guard, runtime-seam coverage
+for external input/admission/confirmed projection, and tagged FIFO coverage
+for partial enqueue cancellation, terminal write/ack/transport/disconnect
+failure, timeout rollback, and recovery; ASan/UBSan reported no finding. The
+full local build reported 667,763 bytes of image payload and 1,167,136 bytes
+of app-partition headroom. The minimal build reported 656,319 bytes and
+1,178,576 bytes of headroom. All entity/control, external-automation,
+and confirmed-publication evidence is synthetic or compile-derived; no heater
+or BLE adapter was available, so hardware publication/control/fallback checks
+remain unavailable.
