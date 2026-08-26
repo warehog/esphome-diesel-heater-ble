@@ -440,3 +440,64 @@ distinct `set_protocol(ProtocolVariant::...)` and `set_passkey(...)` calls.
 After adding terminal-outcome classification, both normal and ASan host suites
 again passed 4/4, and the full plus minimal ESPHome configurations compiled.
 Hardware discovery for every variant remains unavailable.
+
+## T07 serialized command delivery (code complete, hardware validation pending)
+
+`CommandDelivery` is a fixed four-operation FIFO with no dynamic allocation.
+It permits exactly one submitted GATT write, waits for
+`ESP_GATTC_WRITE_CHAR_EVT` before accepting an acknowledgement, and advances a
+two-frame mode/value batch only after its current frame receives either a
+matching parsed response-command byte or a matching fresh parsed state. Fresh
+state is accepted only while that frame is awaiting acknowledgement and only
+when its notification timestamp is at or after GATT write completion.
+
+The dispatcher uses a 1,500 ms acknowledgement timeout and two retries; the
+third failed attempt deterministically records `ACK_TIMEOUT` or
+`WRITE_FAILED` and drops the operation. A submitted GATT write also has a
+1,000 ms completion deadline. Because a missing write-completion event leaves
+the controller outcome unknown, `WRITE_COMPLETION_TIMEOUT` fails closed:
+queued work is cleared, all new work is rejected, and no retry/write occurs
+until disconnect resets the connection generation. An explicit GATT write
+failure is known not to be pending and may use the normal bounded retry path.
+Queue overflow, invalid batches, blocked transport, and suppressed status
+polls return named delivery results and are rate-limited in the runtime log.
+Only one poll can exist; later polls are suppressed while it is pending or
+awaiting acknowledgement, and a control then sits directly behind that poll.
+An unsent idle poll is removed when a control arrives. Disconnect clears every
+queued and in-flight operation for that connection generation.
+
+`command_delivery_test` is entirely **synthetic** and shares the production
+dispatcher seam through a deterministic fake clock and callback transport. It
+covers one-write enforcement; pre-completion, nonmatching, stale, and matching
+acknowledgements; state acknowledgement identity/timestamp checks; retries,
+final timeout, immediate and completion write failures; a missing completion
+event that blocks transport without retry until disconnect; FIFO overflow;
+dependent mode/value ordering; repeated polling while a poll is pending or
+awaiting acknowledgement; `uint32_t` millis wraparound; and disconnect
+clearing. It proves implementation behavior only; it is not evidence of real
+controller acknowledgement timing or protocol interoperability.
+
+The following completed successfully on 2026-08-26 with CMake 3.31.6, GNU C++
+14.2.0, ESPHome 2026.8.1, ESP-IDF 5.5.5, and ESP32 GCC 14.2.0:
+
+```sh
+cmake -S tests -B /tmp/diesel-heater-host-tests-t07
+cmake --build /tmp/diesel-heater-host-tests-t07 --parallel
+ctest --test-dir /tmp/diesel-heater-host-tests-t07 --output-on-failure
+cmake -S tests -B /tmp/diesel-heater-host-asan-t07 -DENABLE_SANITIZERS=ON
+cmake --build /tmp/diesel-heater-host-asan-t07 --parallel
+ctest --test-dir /tmp/diesel-heater-host-asan-t07 --output-on-failure
+.venv/bin/esphome config tests/esphome-local.yaml
+.venv/bin/esphome compile tests/esphome-local.yaml
+.venv/bin/esphome config tests/esphome-minimal.yaml
+.venv/bin/esphome compile tests/esphome-minimal.yaml
+git diff --check
+```
+
+Both normal and ASan/UBSan host suites passed 6/6. The full local build
+reported 665,639 bytes of image payload, 665,760 bytes padded, and 1,169,248
+bytes of application-partition headroom. The minimal build reported 655,791
+bytes of image payload, 655,904 bytes padded, and 1,179,104 bytes of headroom.
+No compatible heater or BLE adapter was available: multi-frame level/
+temperature commands, reconnect during a command, and timeout recovery remain
+hardware-validation pending.

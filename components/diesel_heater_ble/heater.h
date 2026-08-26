@@ -17,7 +17,7 @@
 #include "protocol.h"
 #include "protocol_aa.h"
 #include "availability.h"
-#include "command_dispatch.h"
+#include "command_delivery.h"
 #include "lifecycle.h"
 #include "state.h"
 
@@ -98,11 +98,13 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
  protected:
   CommandAdmission admit_command_(Capabilities required_capabilities, bool value_valid);
   void dispatch_command_(CommandAdmission admission, const CommandBatch *batch);
-  void send_discovery_probe_(const CommandBatch &batch);
+  bool state_matches_current_command_(const HeaterState &state) const;
   void clear_connection_state_();
   void publish_unavailable_entities_(AvailabilityMask entities);
   void log_admission_rejection_(CommandAdmission result);
   void log_batch_rejection_(CommandResult result);
+  void log_delivery_enqueue_(DeliveryEnqueueResult result);
+  void log_delivery_failure_();
   void log_lifecycle_(const char *message);
 
   uint16_t handle_{0};
@@ -115,6 +117,7 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
   ProtocolSelection selection_{};
   LifecycleSession lifecycle_{};
   AvailabilityGeneration availability_{};
+  CommandDelivery delivery_{};
   uint16_t passkey_{kDefaultAAPasskey};
   bool discovery_response_failure_logged_{false};
   bool discovery_timeout_logged_{false};
@@ -123,8 +126,11 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
   uint32_t last_update_{0};
   uint32_t last_rejection_log_{0};
   uint32_t last_lifecycle_log_{0};
+  uint32_t last_delivery_log_{0};
   CommandAdmission last_admission_rejection_{CommandAdmission::READY};
   CommandResult last_batch_rejection_{CommandResult::READY};
+  DeliveryEnqueueResult last_delivery_enqueue_{DeliveryEnqueueResult::QUEUED};
+  DeliveryFailure last_delivery_failure_{DeliveryFailure::NONE};
 
   // Sensor fields
   sensor::Sensor *running_state_{};

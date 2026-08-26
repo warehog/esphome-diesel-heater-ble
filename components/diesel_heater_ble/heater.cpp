@@ -73,15 +73,24 @@ template<typename T> void publish_number_field(number::Number *number, const Sta
 }  // namespace
 
 void DieselHeaterBLE::loop() {
+  const uint32_t now = millis();
+  this->delivery_.tick(now, [this](const CommandFrame &frame) {
+    CommandFrame writable_frame = frame;
+    return this->ble_write_chr(this->parent()->get_gattc_if(), this->parent()->get_remote_bda(), this->handle_,
+                               writable_frame.data(), writable_frame.size());
+  });
+  this->log_delivery_failure_();
   if (this->lifecycle_.connected()) {
-    if (this->last_request_ + 1000 < millis()) {
-      this->last_request_ = millis();
+    if (now - this->last_request_ >= 1000) {
       const ProtocolDriver *driver = this->selection_.driver();
       if (driver != nullptr) {
         const CommandAdmission admission = this->admit_command_(capability_bits(Capability::STATUS), true);
         if (admission == CommandAdmission::READY) {
           const CommandBatch batch = driver->status(this->passkey_);
-          this->dispatch_command_(admission, &batch);
+          const DeliveryEnqueueResult result = this->delivery_.enqueue_poll(batch);
+          if (result == DeliveryEnqueueResult::QUEUED || result == DeliveryEnqueueResult::POLL_SUPPRESSED)
+            this->last_request_ = now;
+          this->log_delivery_enqueue_(result);
         } else {
           this->dispatch_command_(admission, nullptr);
         }
@@ -89,8 +98,12 @@ void DieselHeaterBLE::loop() {
         // App-derived shared discovery probe: configured passkey, command 1,
         // value 0. It does not select a driver on its own.
         CommandBatch probe = this->selection_.discovery_probe(this->passkey_);
-        this->selection_.record_probe();
-        this->send_discovery_probe_(probe);
+        const DeliveryEnqueueResult queued = this->delivery_.enqueue_control(probe);
+        if (queued == DeliveryEnqueueResult::QUEUED) {
+          this->selection_.record_probe();
+          this->last_request_ = now;
+        }
+        this->log_delivery_enqueue_(queued);
       } else if (!this->discovery_timeout_logged_) {
         if (this->selection_.invalid_response_seen()) {
           this->log_lifecycle_("Protocol discovery failed: invalid response.");
@@ -148,8 +161,12 @@ void DieselHeaterBLE::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_i
       }
       break;
 
-    case ESP_GATTC_READ_CHAR_EVT:
     case ESP_GATTC_WRITE_CHAR_EVT:
+      if (param->write.conn_id == this->parent()->get_conn_id() && param->write.handle == this->handle_)
+        this->delivery_.on_write_complete(millis(), param->write.status == ESP_GATT_OK);
+      break;
+
+    case ESP_GATTC_READ_CHAR_EVT:
       break;
 
     default:
@@ -161,7 +178,8 @@ void DieselHeaterBLE::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_i
 bool DieselHeaterBLE::ble_write_chr(esp_gatt_if_t gattc_if, esp_bd_addr_t remote_bda, uint16_t handle, uint8_t *data,
                                     uint16_t len) {
   esp_err_t ret =
-      esp_ble_gattc_write_char(gattc_if, 0, handle, len, data, ESP_GATT_WRITE_TYPE_RSP, ESP_GATT_AUTH_REQ_NONE);
+      esp_ble_gattc_write_char(gattc_if, this->parent()->get_conn_id(), handle, len, data, ESP_GATT_WRITE_TYPE_RSP,
+                               ESP_GATT_AUTH_REQ_NONE);
   if (ret != ESP_OK) {
     ESP_LOGD(TAG, "Write characteristic failed, status: %d", ret);
     return false;
@@ -212,7 +230,10 @@ void DieselHeaterBLE::on_notification_received(const std::vector<uint8_t> &data)
     return;
   }
   this->lifecycle_.confirm_response(driver->capabilities());
-  this->last_update_ = millis();
+  const uint32_t now = millis();
+  this->delivery_.on_response(now, parsed.acknowledged_command.valid, parsed.acknowledged_command.value,
+                              this->state_matches_current_command_(parsed));
+  this->last_update_ = now;
 }
 
 CommandAdmission DieselHeaterBLE::admit_command_(Capabilities required_capabilities, bool value_valid) {
@@ -222,21 +243,41 @@ CommandAdmission DieselHeaterBLE::admit_command_(Capabilities required_capabilit
 }
 
 void DieselHeaterBLE::dispatch_command_(CommandAdmission admission, const CommandBatch *batch) {
-  const DispatchResult result = CommandDispatchGate::dispatch(admission, batch, [this](const CommandFrame &frame) {
-    CommandFrame writable_frame = frame;
-    this->ble_write_chr(this->parent()->get_gattc_if(), this->parent()->get_remote_bda(), this->handle_,
-                        writable_frame.data(), writable_frame.size());
-  });
-  if (result == DispatchResult::BATCH_REJECTED && batch != nullptr) this->log_batch_rejection_(batch->result());
+  if (admission != CommandAdmission::READY) return;
+  if (batch == nullptr || !batch->sendable()) {
+    if (batch != nullptr) this->log_batch_rejection_(batch->result());
+    return;
+  }
+  this->log_delivery_enqueue_(this->delivery_.enqueue_control(*batch));
 }
 
-void DieselHeaterBLE::send_discovery_probe_(const CommandBatch &batch) {
-  if (!this->lifecycle_.transport_ready() || !batch.sendable()) return;
-  for (std::size_t index = 0; index < batch.size(); ++index) {
-    const CommandFrame *frame = batch.frame_at(index);
-    CommandFrame writable_frame = *frame;
-    this->ble_write_chr(this->parent()->get_gattc_if(), this->parent()->get_remote_bda(), this->handle_,
-                        writable_frame.data(), writable_frame.size());
+bool DieselHeaterBLE::state_matches_current_command_(const HeaterState &state) const {
+  const CommandFrame *frame = this->delivery_.current_frame();
+  if (frame == nullptr || !state.valid) return false;
+  const AACommand command = static_cast<AACommand>((*frame)[4]);
+  const uint16_t wire_value = static_cast<uint16_t>((*frame)[5]) | (static_cast<uint16_t>((*frame)[6]) << 8U);
+  switch (command) {
+    case AACommand::STATUS:
+      return true;
+    case AACommand::POWER:
+      return state.power.valid && state.power.value == (wire_value != 0);
+    case AACommand::MODE:
+      return state.operating_mode.valid &&
+             ((wire_value == 1 && state.operating_mode.value == OperatingMode::MANUAL_LEVEL) ||
+              (wire_value == 2 && state.operating_mode.value == OperatingMode::THERMOSTAT));
+    case AACommand::VALUE:
+      if (state.operating_mode.valid && state.operating_mode.value == OperatingMode::MANUAL_LEVEL)
+        return state.manual_level.valid && state.manual_level.value == wire_value;
+      if (state.operating_mode.valid && state.operating_mode.value == OperatingMode::THERMOSTAT &&
+          state.target_temperature_c.valid) {
+        float expected_c = static_cast<float>(wire_value);
+        if (state.reported_temperature_unit.valid && state.reported_temperature_unit.value == TemperatureUnit::FAHRENHEIT)
+          expected_c = (expected_c - 32.0f) * (5.0f / 9.0f);
+        return std::fabs(state.target_temperature_c.value - expected_c) < 0.01f;
+      }
+      return false;
+    default:
+      return false;
   }
 }
 
@@ -256,6 +297,25 @@ void DieselHeaterBLE::log_batch_rejection_(CommandResult result) {
   ESP_LOGD(TAG, "Command rejected, result: %u", static_cast<unsigned>(result));
 }
 
+void DieselHeaterBLE::log_delivery_enqueue_(DeliveryEnqueueResult result) {
+  if (result == DeliveryEnqueueResult::QUEUED) return;
+  const uint32_t now = millis();
+  if (result == this->last_delivery_enqueue_ && now - this->last_delivery_log_ < 5000) return;
+  this->last_delivery_enqueue_ = result;
+  this->last_delivery_log_ = now;
+  ESP_LOGD(TAG, "Command delivery not queued, result: %u", static_cast<unsigned>(result));
+}
+
+void DieselHeaterBLE::log_delivery_failure_() {
+  const DeliveryFailure failure = this->delivery_.last_failure();
+  if (failure == DeliveryFailure::NONE || failure == this->last_delivery_failure_) return;
+  const uint32_t now = millis();
+  if (now - this->last_delivery_log_ < 1000) return;
+  this->last_delivery_failure_ = failure;
+  this->last_delivery_log_ = now;
+  ESP_LOGD(TAG, "Command delivery failed, reason: %u", static_cast<unsigned>(failure));
+}
+
 void DieselHeaterBLE::log_lifecycle_(const char *message) {
   const uint32_t now = millis();
   if (now - this->last_lifecycle_log_ < 1000) return;
@@ -264,6 +324,7 @@ void DieselHeaterBLE::log_lifecycle_(const char *message) {
 }
 
 void DieselHeaterBLE::clear_connection_state_() {
+  this->delivery_.disconnect();
   this->lifecycle_.disconnect();
   const AvailabilityMask unavailable_entities = this->availability_.disconnect();
   this->handle_ = 0;
@@ -275,6 +336,8 @@ void DieselHeaterBLE::clear_connection_state_() {
   this->discovery_timeout_logged_ = false;
   this->last_admission_rejection_ = CommandAdmission::READY;
   this->last_batch_rejection_ = CommandResult::READY;
+  this->last_delivery_enqueue_ = DeliveryEnqueueResult::QUEUED;
+  this->last_delivery_failure_ = DeliveryFailure::NONE;
   if (this->climate_ != nullptr) this->climate_->on_heater_disconnect();
   if (this->power_switch_ != nullptr) this->power_switch_->set_has_state(false);
   if (unavailable_entities != 0) this->publish_unavailable_entities_(unavailable_entities);
