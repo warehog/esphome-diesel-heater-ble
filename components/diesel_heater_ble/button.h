@@ -3,7 +3,6 @@
 #include "esphome/components/button/button.h"
 #include "esphome/core/log.h"
 #include "heater.h"
-#include "messages.h"
 
 namespace esphome {
 namespace diesel_heater_ble {

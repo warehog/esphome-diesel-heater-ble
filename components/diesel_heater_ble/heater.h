@@ -14,9 +14,9 @@
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
 
-#include "messages.h"
+#include "protocol.h"
+#include "protocol_aa.h"
 #include "state.h"
-#include "controllers.h"
 
 namespace esphome {
 namespace diesel_heater_ble {
@@ -31,17 +31,7 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
   void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
                            esp_ble_gattc_cb_param_t *param) override;
 
-  void sent_request(const std::vector<uint8_t> &data) {
-    std::vector<uint8_t> data_(data);
-    this->ble_write_chr(this->parent()->get_gattc_if(), this->parent()->get_remote_bda(), this->handle_, data_.data(),
-                        data.size());
-  }
-
-  void sent_requests(const std::vector<Request> &requests) {
-    for (const auto &request : requests) {
-      this->sent_request(request.toBytes());
-    }
-  }
+  void send_batch(const CommandBatch &batch);
 
   bool ble_write_chr(esp_gatt_if_t gattc_if, esp_bd_addr_t remote_bda, uint16_t handle, uint8_t *data, uint16_t len);
   bool ble_read_chr(esp_gatt_if_t gattc_if, esp_bd_addr_t remote_bda, uint16_t handle);
@@ -110,7 +100,7 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
       esp32_ble_tracker::ESPBTUUID::from_raw("0000ffe1-0000-1000-8000-00805f9b34fb");
 
   HeaterState state_;
-  HeaterController *controller_{};
+  const ProtocolDriver *driver_{};
 
   bool response_received_{false};
   uint32_t last_request_{0};

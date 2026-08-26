@@ -312,3 +312,62 @@ Fahrenheit temperature writes rather than send a normalized Celsius value as
 an on-wire Fahrenheit value. This is a deliberately scoped T03 safety
 regression, not a new command policy. No hardware, raw BLE capture, or device
 state-publication test was available.
+
+## T04 AA-family driver cutover (code complete, hardware validation pending)
+
+T04 replaces the live request/controller/parser route with `ProtocolDriver`,
+`AAProtocolDriver`, and one static MD1--MD4 registry. A response activates its
+driver only after that driver's complete parse succeeds. The runtime retains a
+single app-derived status probe before activation; entity control requests
+return a safe unavailable result until a driver and valid state exist. There
+is no heap allocation for driver selection, no legacy compatibility adapter,
+and no remaining `messages.h`, `controllers.h`, `ResponseParser`, request
+subclass, or controller-selector include in component or host-test C++.
+
+The shared encoder accepts the default decimal passkey 1234, writes its two
+base-100 fields, writes every value as a signed 16-bit little-endian bit
+pattern, and computes the byte-wrapping checksum from bytes 2--6. Its command
+identifiers are decimal: 10 clock; 11 automatic start time; 12 automatic run
+time; 13 automatic enabled; 14 language; 15 temperature unit; 16 tank volume;
+17 oil-pump type/RF433; 18 automatic heating; 19 altitude unit; and 20
+temperature offset. Command construction converts normalized Celsius to
+Fahrenheit only when the selected response state reports Fahrenheit; command
+queueing, configurable passkeys, and configuration policy remain T05--T07
+work.
+
+The host suite remains entirely **synthetic**. It reruns every T03 parser
+safety test through the registry and adds byte-exact encoder checks for the
+default status frame, passkeys 1/9999, values 255/256/1439, signed negative
+offsets, checksum wraparound, and command IDs 1--4 and 10--20. It also tests
+unselected-state rejection plus Celsius/Fahrenheit command conversion and
+mode-then-temperature batching. These tests verify code behavior, not a
+captured wire protocol or a heater command acknowledgement.
+
+The following commands passed with ESPHome 2026.8.1, ESP-IDF 5.5.5, ESP32 GCC
+14.2.0, CMake 3.31.6, and GNU C++ 14.2.0:
+
+```sh
+cmake -S tests -B /tmp/diesel-heater-host-tests-t04
+cmake --build /tmp/diesel-heater-host-tests-t04 --parallel
+ctest --test-dir /tmp/diesel-heater-host-tests-t04 --output-on-failure
+cmake -S tests -B /tmp/diesel-heater-host-asan-t04 -DENABLE_SANITIZERS=ON
+cmake --build /tmp/diesel-heater-host-asan-t04 --parallel
+ctest --test-dir /tmp/diesel-heater-host-asan-t04 --output-on-failure
+.venv/bin/esphome config tests/esphome-local.yaml
+.venv/bin/esphome compile tests/esphome-local.yaml
+.venv/bin/esphome config tests/esphome-minimal.yaml
+.venv/bin/esphome compile tests/esphome-minimal.yaml
+git diff --check
+```
+
+Both CTest runs passed 3/3. Both ESPHome configurations validated and compiled
+without compiler warnings. The 1,835,008-byte app partition measurements are:
+
+| Configuration | Image payload | Padded OTA binary | Remaining app-partition margin |
+| --- | ---: | ---: | ---: |
+| Full local entities | 662,359 bytes | 662,480 bytes | 1,172,649 bytes |
+| Minimal core | 653,163 bytes | 653,280 bytes | 1,181,845 bytes |
+
+No hardware, real BLE captures, write acknowledgements, or state-publication
+checks were available. MD1--MD4 support remains app-derived; hardware command
+and response validation is pending.

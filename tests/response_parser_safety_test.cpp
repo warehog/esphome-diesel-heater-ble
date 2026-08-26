@@ -3,14 +3,14 @@
 #include <cstdint>
 #include <vector>
 
-#include "messages.h"
+#include "protocol_aa.h"
 
 using esphome::diesel_heater_ble::AltitudeUnit;
 using esphome::diesel_heater_ble::HeaterState;
 using esphome::diesel_heater_ble::OperatingMode;
 using esphome::diesel_heater_ble::ParseResult;
 using esphome::diesel_heater_ble::ProtocolVariant;
-using esphome::diesel_heater_ble::ResponseParser;
+using esphome::diesel_heater_ble::AAProtocolDriver;
 using esphome::diesel_heater_ble::TemperatureUnit;
 
 namespace {
@@ -19,7 +19,7 @@ namespace {
 // app/docs field map to exercise parser bounds and normalization; it is not a
 // captured wire frame and its length is not evidence of a wire-frame boundary.
 std::vector<uint8_t> plain_frame(ProtocolVariant variant) {
-  const std::size_t size = ResponseParser::documented_complete_span(variant);
+  const std::size_t size = AAProtocolDriver::documented_complete_span(variant);
   std::vector<uint8_t> data(size, 0);
   data[0] = 0xAA;
   data[1] = variant == ProtocolVariant::MD3_AA66_PLAIN ? 0x66 : 0x55;
@@ -53,7 +53,7 @@ std::vector<uint8_t> xor_crypt(std::vector<uint8_t> data) {
 }
 
 std::vector<uint8_t> encrypted_frame(ProtocolVariant variant) {
-  const std::size_t size = ResponseParser::documented_complete_span(variant);
+  const std::size_t size = AAProtocolDriver::documented_complete_span(variant);
   std::vector<uint8_t> data(size, 0);
   data[0] = 0xAA;
   data[1] = variant == ProtocolVariant::MD4_AA66_ENCRYPTED ? 0x66 : 0x55;
@@ -134,19 +134,25 @@ bool states_equal(const HeaterState &lhs, const HeaterState &rhs) {
          fields_equal(lhs.raw_running_step, rhs.raw_running_step);
 }
 
+ParseResult parse_frame(const std::vector<uint8_t> &raw, HeaterState &state) {
+  ParseResult result{};
+  esphome::diesel_heater_ble::ProtocolRegistry::parse_and_find(raw, state, result);
+  return result;
+}
+
 void assert_parse_failure_preserves_state(const std::vector<uint8_t> &raw, ParseResult expected_result) {
   HeaterState state = sentinel_state();
   const HeaterState before = state;
-  assert(ResponseParser::parse(raw, state) == expected_result);
+  assert(parse_frame(raw, state) == expected_result);
   assert(states_equal(state, before));
 }
 
 void test_all_short_prefixes_preserve_state() {
   for (const ProtocolVariant variant : {ProtocolVariant::MD1_AA55_PLAIN, ProtocolVariant::MD2_AA55_ENCRYPTED,
                                         ProtocolVariant::MD3_AA66_PLAIN, ProtocolVariant::MD4_AA66_ENCRYPTED}) {
-    const std::vector<uint8_t> full = ResponseParser::is_encrypted(variant) ? encrypted_frame(variant) : plain_frame(variant);
-    const std::size_t safe_span = ResponseParser::minimum_safe_read_span(variant);
-    const std::size_t complete_span = ResponseParser::documented_complete_span(variant);
+    const std::vector<uint8_t> full = AAProtocolDriver::is_encrypted(variant) ? encrypted_frame(variant) : plain_frame(variant);
+    const std::size_t safe_span = AAProtocolDriver::minimum_safe_read_span(variant);
+    const std::size_t complete_span = AAProtocolDriver::documented_complete_span(variant);
     assert(safe_span < complete_span);
     assert(full.size() == complete_span);
     for (std::size_t prefix_size = 0; prefix_size < complete_span; ++prefix_size) {
@@ -163,17 +169,17 @@ void test_header_validation_and_decryption() {
   assert_parse_failure_preserves_state({0x00, 0x55}, ParseResult::UNKNOWN_PROTOCOL);
 
   const std::vector<uint8_t> encrypted = encrypted_frame(ProtocolVariant::MD2_AA55_ENCRYPTED);
-  const std::vector<uint8_t> decrypted = ResponseParser::decrypt(encrypted);
+  const std::vector<uint8_t> decrypted = AAProtocolDriver::decrypt(encrypted);
   assert(decrypted.size() == encrypted.size());
-  assert(ResponseParser::headers_match(encrypted, decrypted, ProtocolVariant::MD2_AA55_ENCRYPTED));
-  assert(!ResponseParser::headers_match(encrypted, decrypted, ProtocolVariant::MD4_AA66_ENCRYPTED));
+  assert(AAProtocolDriver::headers_match(encrypted, decrypted, ProtocolVariant::MD2_AA55_ENCRYPTED));
+  assert(!AAProtocolDriver::headers_match(encrypted, decrypted, ProtocolVariant::MD4_AA66_ENCRYPTED));
 
   std::vector<uint8_t> wrong_decrypted = decrypted;
   wrong_decrypted[1] = 0x66;
-  assert(!ResponseParser::headers_match(encrypted, wrong_decrypted, ProtocolVariant::MD2_AA55_ENCRYPTED));
+  assert(!AAProtocolDriver::headers_match(encrypted, wrong_decrypted, ProtocolVariant::MD2_AA55_ENCRYPTED));
 
   const std::vector<uint8_t> short_encrypted{0xDA, 0x34, 0x42};
-  assert(ResponseParser::decrypt(short_encrypted).size() == short_encrypted.size());
+  assert(AAProtocolDriver::decrypt(short_encrypted).size() == short_encrypted.size());
 }
 
 void test_full_length_malformed_frames_preserve_state() {
@@ -195,20 +201,20 @@ void test_full_length_malformed_frames_preserve_state() {
 }
 
 void test_documented_completeness_policy() {
-  assert(ResponseParser::minimum_safe_read_span(ProtocolVariant::MD1_AA55_PLAIN) == 17);
-  assert(ResponseParser::minimum_safe_read_span(ProtocolVariant::MD3_AA66_PLAIN) == 18);
-  assert(ResponseParser::minimum_safe_read_span(ProtocolVariant::MD2_AA55_ENCRYPTED) == 35);
-  assert(ResponseParser::minimum_safe_read_span(ProtocolVariant::MD4_AA66_ENCRYPTED) == 36);
-  assert(ResponseParser::documented_complete_span(ProtocolVariant::MD1_AA55_PLAIN) == 20);
-  assert(ResponseParser::documented_complete_span(ProtocolVariant::MD3_AA66_PLAIN) == 20);
-  assert(ResponseParser::documented_complete_span(ProtocolVariant::MD2_AA55_ENCRYPTED) == 48);
-  assert(ResponseParser::documented_complete_span(ProtocolVariant::MD4_AA66_ENCRYPTED) == 48);
+  assert(AAProtocolDriver::minimum_safe_read_span(ProtocolVariant::MD1_AA55_PLAIN) == 17);
+  assert(AAProtocolDriver::minimum_safe_read_span(ProtocolVariant::MD3_AA66_PLAIN) == 18);
+  assert(AAProtocolDriver::minimum_safe_read_span(ProtocolVariant::MD2_AA55_ENCRYPTED) == 35);
+  assert(AAProtocolDriver::minimum_safe_read_span(ProtocolVariant::MD4_AA66_ENCRYPTED) == 36);
+  assert(AAProtocolDriver::documented_complete_span(ProtocolVariant::MD1_AA55_PLAIN) == 20);
+  assert(AAProtocolDriver::documented_complete_span(ProtocolVariant::MD3_AA66_PLAIN) == 20);
+  assert(AAProtocolDriver::documented_complete_span(ProtocolVariant::MD2_AA55_ENCRYPTED) == 48);
+  assert(AAProtocolDriver::documented_complete_span(ProtocolVariant::MD4_AA66_ENCRYPTED) == 48);
 }
 
 void test_plain_normalization_and_invalidation() {
   HeaterState state{};
   std::vector<uint8_t> plain = plain_frame(ProtocolVariant::MD1_AA55_PLAIN);
-  assert(ResponseParser::parse(plain, state) == ParseResult::OK);
+  assert(parse_frame(plain, state) == ParseResult::OK);
   assert(state.valid);
   assert(state.variant == ProtocolVariant::MD1_AA55_PLAIN);
   assert(state.acknowledged_command.valid && state.acknowledged_command.value == 4);
@@ -227,14 +233,14 @@ void test_plain_normalization_and_invalidation() {
   // starts a fresh state, so a previous thermostat target cannot survive.
   plain[8] = 1;
   plain[9] = 6;
-  assert(ResponseParser::parse(plain, state) == ParseResult::OK);
+  assert(parse_frame(plain, state) == ParseResult::OK);
   assert(state.operating_mode.valid && state.operating_mode.value == OperatingMode::MANUAL_LEVEL);
   assert(state.manual_level.valid && state.manual_level.value == 6);
   assert(!state.target_temperature_c.valid);
 
   plain[8] = 0;
   plain[10] = 9;
-  assert(ResponseParser::parse(plain, state) == ParseResult::OK);
+  assert(parse_frame(plain, state) == ParseResult::OK);
   assert(!state.operating_mode.valid);
   assert(state.manual_level.valid && state.manual_level.value == 10);
   assert(!state.target_temperature_c.valid);
@@ -243,7 +249,7 @@ void test_plain_normalization_and_invalidation() {
 void test_encrypted_normalization_and_validity() {
   HeaterState state{};
   std::vector<uint8_t> encrypted = encrypted_frame(ProtocolVariant::MD2_AA55_ENCRYPTED);
-  assert(ResponseParser::parse(encrypted, state) == ParseResult::OK);
+  assert(parse_frame(encrypted, state) == ParseResult::OK);
   assert(state.valid);
   assert(state.variant == ProtocolVariant::MD2_AA55_ENCRYPTED);
   assert(state.error_code.valid && state.error_code.value == 8);
@@ -267,7 +273,7 @@ void test_encrypted_normalization_and_validity() {
   assert(state.auto_time.valid && state.auto_time.value == 0x0304);
   assert(state.run_time.valid && state.run_time.value == 0x0506);
 
-  std::vector<uint8_t> decrypted = ResponseParser::decrypt(encrypted);
+  std::vector<uint8_t> decrypted = AAProtocolDriver::decrypt(encrypted);
   decrypted[9] = 100;
   decrypted[10] = 0;
   decrypted[26] = 6;
@@ -276,7 +282,7 @@ void test_encrypted_normalization_and_validity() {
   decrypted[30] = 2;
   decrypted[31] = 2;
   encrypted = xor_crypt(decrypted);
-  assert(ResponseParser::parse(encrypted, state) == ParseResult::OK);
+  assert(parse_frame(encrypted, state) == ParseResult::OK);
   assert(!state.target_temperature_c.valid);
   assert(!state.manual_level.valid);
   assert(!state.reported_temperature_unit.valid);
@@ -287,7 +293,7 @@ void test_encrypted_normalization_and_validity() {
   assert(!state.rf433_enabled.valid);
   assert(!state.automatic_heating_enabled.valid);
 
-  decrypted = ResponseParser::decrypt(encrypted);
+  decrypted = AAProtocolDriver::decrypt(encrypted);
   decrypted[27] = 0;
   decrypted[34] = 0x80;
   decrypted[30] = 1;
@@ -298,34 +304,34 @@ void test_encrypted_normalization_and_validity() {
   decrypted[32] = 0x80;
   decrypted[33] = 0x00;  // -3276.8 C, big endian tenths.
   encrypted = xor_crypt(decrypted);
-  assert(ResponseParser::parse(encrypted, state) == ParseResult::OK);
+  assert(parse_frame(encrypted, state) == ParseResult::OK);
   assert(state.temperature_offset_c.valid && state.temperature_offset_c.value == -128.0f);
   assert(state.altitude_m.valid && std::fabs(state.altitude_m.value - 3.048f) < 0.001f);
   assert(state.case_temperature_c.valid && state.case_temperature_c.value == 32767.0f);
   assert(state.cabin_temperature_c.valid && std::fabs(state.cabin_temperature_c.value + 3276.8f) < 0.001f);
 
   encrypted = encrypted_frame(ProtocolVariant::MD2_AA55_ENCRYPTED);
-  decrypted = ResponseParser::decrypt(encrypted);
+  decrypted = AAProtocolDriver::decrypt(encrypted);
   decrypted[9] = 40;
   encrypted = xor_crypt(decrypted);
-  assert(ResponseParser::parse(encrypted, state) == ParseResult::OK);
+  assert(parse_frame(encrypted, state) == ParseResult::OK);
   assert(state.target_temperature_c.valid && std::fabs(state.target_temperature_c.value - (40.0f - 32.0f) * (5.0f / 9.0f)) < 0.001f);
-  decrypted = ResponseParser::decrypt(encrypted);
+  decrypted = AAProtocolDriver::decrypt(encrypted);
   decrypted[9] = 99;
   encrypted = xor_crypt(decrypted);
-  assert(ResponseParser::parse(encrypted, state) == ParseResult::OK);
+  assert(parse_frame(encrypted, state) == ParseResult::OK);
   assert(state.target_temperature_c.valid && std::fabs(state.target_temperature_c.value - (99.0f - 32.0f) * (5.0f / 9.0f)) < 0.001f);
 }
 
 void test_variant_transition_invalidates_extended_fields() {
   HeaterState state{};
-  assert(ResponseParser::parse(encrypted_frame(ProtocolVariant::MD2_AA55_ENCRYPTED), state) == ParseResult::OK);
+  assert(parse_frame(encrypted_frame(ProtocolVariant::MD2_AA55_ENCRYPTED), state) == ParseResult::OK);
   assert(state.temperature_offset_c.valid);
   assert(state.rf433_enabled.valid);
   assert(state.reported_temperature_unit.valid);
   assert(state.start_time.valid);
 
-  assert(ResponseParser::parse(plain_frame(ProtocolVariant::MD1_AA55_PLAIN), state) == ParseResult::OK);
+  assert(parse_frame(plain_frame(ProtocolVariant::MD1_AA55_PLAIN), state) == ParseResult::OK);
   assert(!state.temperature_offset_c.valid);
   assert(!state.rf433_enabled.valid);
   assert(!state.reported_temperature_unit.valid);
@@ -336,11 +342,11 @@ void test_variant_transition_invalidates_extended_fields() {
 void test_variant_specific_error_offsets() {
   HeaterState state{};
   const std::vector<uint8_t> md3 = plain_frame(ProtocolVariant::MD3_AA66_PLAIN);
-  assert(ResponseParser::parse(md3, state) == ParseResult::OK);
+  assert(parse_frame(md3, state) == ParseResult::OK);
   assert(state.error_code.valid && state.error_code.value == 7);
 
   const std::vector<uint8_t> md4 = encrypted_frame(ProtocolVariant::MD4_AA66_ENCRYPTED);
-  assert(ResponseParser::parse(md4, state) == ParseResult::OK);
+  assert(parse_frame(md4, state) == ParseResult::OK);
   assert(state.error_code.valid && state.error_code.value == 6);
 }
 

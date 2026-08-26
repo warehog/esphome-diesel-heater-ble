@@ -76,9 +76,15 @@ void DieselHeaterBLE::loop() {
   if (this->node_state == esp32_ble_tracker::ClientState::ESTABLISHED) {
     if (this->last_request_ + 1000 < millis()) {
       this->last_request_ = millis();
-      uint8_t data[8] = {0xaa, 0x55, 0x0c, 0x22, 0x01, 0x00, 0x00, 0x2f};
-      this->ble_write_chr(this->parent()->get_gattc_if(), this->parent()->get_remote_bda(), this->handle_, data,
-                          sizeof(data));
+      CommandBatch poll = CommandBatch::with_result(CommandResult::READY);
+      if (this->driver_ != nullptr) {
+        poll = this->driver_->status(kDefaultAAPasskey);
+      } else {
+        // App-derived universal discovery probe. It is intentionally an AA
+        // encoder call, not a pre-selection controller or parser path.
+        poll.append(AAProtocolDriver::encode(kDefaultAAPasskey, AACommand::STATUS, 0));
+      }
+      this->send_batch(poll);
     }
     this->update_sensors(this->state_);
   }
@@ -169,32 +175,28 @@ bool DieselHeaterBLE::ble_register_for_notify(esp_gatt_if_t gattc_if, esp_bd_add
 }
 
 void DieselHeaterBLE::on_notification_received(const std::vector<uint8_t> &data) {
-  // Parse into a component-local temporary first. This preserves the legacy
-  // controller availability boundary: before T04, MD1/MD4 do not activate a
-  // controller or publish a new runtime state, even though T03's parser can
-  // safely decode their response format for direct testing.
   HeaterState parsed{};
-  const ParseResult result = ResponseParser::parse(data, parsed);
+  ParseResult result{};
+  const ProtocolDriver *driver = ProtocolRegistry::parse_and_find(data, parsed, result);
   if (result != ParseResult::OK) {
     ESP_LOGD(TAG, "Ignored response, parse result: %u", static_cast<unsigned>(result));
     return;
   }
-
-  // Keep the legacy controller entry point until T04, but never select it
-  // from an unvalidated raw header. Resolve it from the successful temporary
-  // parse before committing component state, so an unsupported legacy
-  // variant has exactly the pre-T03 runtime visibility.
-  HeaterController *controller = this->controller_;
-  if (this->controller_ == nullptr) {
-    controller = ControllerSelector::get_controller(parsed.variant);
-    if (controller == nullptr) {
-      ESP_LOGD(TAG, "No legacy controller for parsed response variant.");
-      return;
-    }
-  }
-
   this->state_ = parsed;
-  this->controller_ = controller;
+  this->driver_ = driver;
+}
+
+void DieselHeaterBLE::send_batch(const CommandBatch &batch) {
+  if (!batch.sendable()) {
+    ESP_LOGD(TAG, "Ignored command, result: %u", static_cast<unsigned>(batch.result()));
+    return;
+  }
+  for (std::size_t index = 0; index < batch.size(); ++index) {
+    const CommandFrame *frame = batch.frame_at(index);
+    CommandFrame writable_frame = *frame;
+    this->ble_write_chr(this->parent()->get_gattc_if(), this->parent()->get_remote_bda(), this->handle_,
+                        writable_frame.data(), writable_frame.size());
+  }
 }
 
 void DieselHeaterBLE::update_climate(const HeaterState &new_state) {
@@ -246,52 +248,59 @@ void DieselHeaterBLE::update_sensors(const HeaterState &new_state) {
 }
 
 void DieselHeaterBLE::on_power_level_number(float value) {
-  if (this->controller_ == nullptr) {
+  if (this->driver_ == nullptr || value < 1.0f || value > 10.0f || std::floor(value) != value) {
+    this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->sent_requests(this->controller_->gen_level_command(this->state_, value));
+  this->send_batch(this->driver_->manual_level(this->state_, kDefaultAAPasskey, static_cast<uint8_t>(value)));
 }
 
 void DieselHeaterBLE::on_temp_number(float value) {
-  if (this->controller_ == nullptr) {
+  if (this->driver_ == nullptr) {
+    this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->sent_requests(this->controller_->gen_temp_command(this->state_, value));
+  this->send_batch(this->driver_->temperature_c(this->state_, kDefaultAAPasskey, value));
 }
 
 void DieselHeaterBLE::on_power_switch(bool state) {
-  if (this->controller_ == nullptr) {
+  if (this->driver_ == nullptr) {
+    this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->sent_requests(this->controller_->gen_power_command(this->state_, state));
+  this->send_batch(this->driver_->power(this->state_, kDefaultAAPasskey, state));
 }
 
 void DieselHeaterBLE::on_level_up_button_press() {
-  if (this->controller_ == nullptr) {
+  if (this->driver_ == nullptr || !this->state_.manual_level.valid || this->state_.manual_level.value >= 10) {
+    this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->sent_requests(this->controller_->gen_level_up_command(this->state_));
+  this->send_batch(this->driver_->manual_level(this->state_, kDefaultAAPasskey, this->state_.manual_level.value + 1));
 }
 
 void DieselHeaterBLE::on_level_down_button_press() {
-  if (this->controller_ == nullptr) {
+  if (this->driver_ == nullptr || !this->state_.manual_level.valid || this->state_.manual_level.value <= 1) {
+    this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->sent_requests(this->controller_->gen_level_down_command(this->state_));
+  this->send_batch(this->driver_->manual_level(this->state_, kDefaultAAPasskey, this->state_.manual_level.value - 1));
 }
 
 void DieselHeaterBLE::on_temp_up_button_press() {
-  if (this->controller_ == nullptr) {
+  if (this->driver_ == nullptr || !this->state_.target_temperature_c.valid) {
+    this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->sent_requests(this->controller_->gen_temp_up_command(this->state_));
+  this->send_batch(this->driver_->temperature_c(this->state_, kDefaultAAPasskey, this->state_.target_temperature_c.value + 1.0f));
 }
 
 void DieselHeaterBLE::on_temp_down_button_press() {
-  if (this->controller_ == nullptr) {
+  if (this->driver_ == nullptr || !this->state_.target_temperature_c.valid) {
+    this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->sent_requests(this->controller_->gen_temp_down_command(this->state_));
+  this->send_batch(this->driver_->temperature_c(this->state_, kDefaultAAPasskey, this->state_.target_temperature_c.value - 1.0f));
 }
 
 }  // namespace diesel_heater_ble
