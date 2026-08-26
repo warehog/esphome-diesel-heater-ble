@@ -45,3 +45,10 @@ target_link_libraries(response_parser_safety_test PRIVATE diesel_heater_protocol
 target_compile_options(response_parser_safety_test PRIVATE -Wall -Wextra -Wpedantic)
 
 add_test(NAME response_parser_safety_test COMMAND response_parser_safety_test)
+
+add_executable(protocol_selection_test protocol_selection_test.cpp)
+target_compile_features(protocol_selection_test PRIVATE cxx_std_17)
+target_link_libraries(protocol_selection_test PRIVATE diesel_heater_protocol)
+target_compile_options(protocol_selection_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME protocol_selection_test COMMAND protocol_selection_test)

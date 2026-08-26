@@ -30,6 +30,11 @@
 
 This repository contains an ESPHome external component that enables control of Bluetooth‐enabled diesel heaters.
 
+The component accepts `protocol: auto` (default), `aa55_plain`,
+`aa55_encrypted`, `aa66_plain`, or `aa66_encrypted`, and a decimal `passkey`
+from 1 through 9999 (default `1234`). `auto` activates only after a complete
+matching response parses successfully; explicit modes reject other responses.
+
 
 
 # Part One: Why?

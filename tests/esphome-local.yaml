@@ -25,6 +25,8 @@ ble_client:
 diesel_heater_ble:
   id: heater
   ble_client_id: heater_ble_client
+  protocol: auto
+  passkey: 1234
 
 climate:
   - platform: diesel_heater_ble

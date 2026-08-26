@@ -91,6 +91,8 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
   void set_climate(DieselHeaterClimate *climate) { climate_ = climate; }
 
   HeaterState get_state() { return this->state_; }
+  void set_protocol(ProtocolVariant protocol) { this->selection_.set_configured(protocol); }
+  void set_passkey(uint16_t passkey) { this->passkey_ = passkey; }
 
  protected:
   uint16_t handle_{0};
@@ -100,7 +102,10 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
       esp32_ble_tracker::ESPBTUUID::from_raw("0000ffe1-0000-1000-8000-00805f9b34fb");
 
   HeaterState state_;
-  const ProtocolDriver *driver_{};
+  ProtocolSelection selection_{};
+  uint16_t passkey_{kDefaultAAPasskey};
+  bool discovery_response_failure_logged_{false};
+  bool discovery_timeout_logged_{false};
 
   bool response_received_{false};
   uint32_t last_request_{0};

@@ -76,15 +76,24 @@ void DieselHeaterBLE::loop() {
   if (this->node_state == esp32_ble_tracker::ClientState::ESTABLISHED) {
     if (this->last_request_ + 1000 < millis()) {
       this->last_request_ = millis();
-      CommandBatch poll = CommandBatch::with_result(CommandResult::READY);
-      if (this->driver_ != nullptr) {
-        poll = this->driver_->status(kDefaultAAPasskey);
-      } else {
-        // App-derived universal discovery probe. It is intentionally an AA
-        // encoder call, not a pre-selection controller or parser path.
-        poll.append(AAProtocolDriver::encode(kDefaultAAPasskey, AACommand::STATUS, 0));
+      if (this->selection_.driver() != nullptr) {
+        this->send_batch(this->selection_.driver()->status(this->passkey_));
+      } else if (this->selection_.should_probe()) {
+        // App-derived shared discovery probe: configured passkey, command 1,
+        // value 0. It does not select a driver on its own.
+        CommandBatch probe = this->selection_.discovery_probe(this->passkey_);
+        this->selection_.record_probe();
+        this->send_batch(probe);
+      } else if (!this->discovery_timeout_logged_) {
+        if (this->selection_.invalid_response_seen()) {
+          ESP_LOGW(TAG, "Protocol discovery failed after %u probes: invalid response received.",
+                   this->selection_.probes_sent());
+        } else {
+          ESP_LOGW(TAG, "Protocol discovery timed out after %u probes: no response received.",
+                   this->selection_.probes_sent());
+        }
+        this->discovery_timeout_logged_ = true;
       }
-      this->send_batch(poll);
     }
     this->update_sensors(this->state_);
   }
@@ -95,12 +104,18 @@ void DieselHeaterBLE::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_i
   switch (event) {
     case ESP_GATTC_OPEN_EVT:
       ESP_LOGD(TAG, "GATT client opened.");
+      this->selection_.reset();
+      this->discovery_response_failure_logged_ = false;
+      this->discovery_timeout_logged_ = false;
       break;
 
     case ESP_GATTC_DISCONNECT_EVT:
       ESP_LOGD(TAG, "GATT client disconnected.");
       this->node_state = esp32_ble_tracker::ClientState::DISCONNECTING;
       this->handle_ = 0;
+      this->selection_.reset();
+      this->discovery_response_failure_logged_ = false;
+      this->discovery_timeout_logged_ = false;
       break;
 
     case ESP_GATTC_SEARCH_CMPL_EVT:
@@ -177,13 +192,14 @@ bool DieselHeaterBLE::ble_register_for_notify(esp_gatt_if_t gattc_if, esp_bd_add
 void DieselHeaterBLE::on_notification_received(const std::vector<uint8_t> &data) {
   HeaterState parsed{};
   ParseResult result{};
-  const ProtocolDriver *driver = ProtocolRegistry::parse_and_find(data, parsed, result);
-  if (result != ParseResult::OK) {
-    ESP_LOGD(TAG, "Ignored response, parse result: %u", static_cast<unsigned>(result));
+  if (!this->selection_.parse(data, parsed, result)) {
+    if (!this->discovery_response_failure_logged_) {
+      ESP_LOGD(TAG, "Ignored response, parse result: %u", static_cast<unsigned>(result));
+      this->discovery_response_failure_logged_ = true;
+    }
     return;
   }
   this->state_ = parsed;
-  this->driver_ = driver;
 }
 
 void DieselHeaterBLE::send_batch(const CommandBatch &batch) {
@@ -248,59 +264,66 @@ void DieselHeaterBLE::update_sensors(const HeaterState &new_state) {
 }
 
 void DieselHeaterBLE::on_power_level_number(float value) {
-  if (this->driver_ == nullptr || value < 1.0f || value > 10.0f || std::floor(value) != value) {
+  const ProtocolDriver *driver = this->selection_.driver();
+  if (driver == nullptr || value < 1.0f || value > 10.0f || std::floor(value) != value) {
     this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->send_batch(this->driver_->manual_level(this->state_, kDefaultAAPasskey, static_cast<uint8_t>(value)));
+  this->send_batch(driver->manual_level(this->state_, this->passkey_, static_cast<uint8_t>(value)));
 }
 
 void DieselHeaterBLE::on_temp_number(float value) {
-  if (this->driver_ == nullptr) {
+  const ProtocolDriver *driver = this->selection_.driver();
+  if (driver == nullptr) {
     this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->send_batch(this->driver_->temperature_c(this->state_, kDefaultAAPasskey, value));
+  this->send_batch(driver->temperature_c(this->state_, this->passkey_, value));
 }
 
 void DieselHeaterBLE::on_power_switch(bool state) {
-  if (this->driver_ == nullptr) {
+  const ProtocolDriver *driver = this->selection_.driver();
+  if (driver == nullptr) {
     this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->send_batch(this->driver_->power(this->state_, kDefaultAAPasskey, state));
+  this->send_batch(driver->power(this->state_, this->passkey_, state));
 }
 
 void DieselHeaterBLE::on_level_up_button_press() {
-  if (this->driver_ == nullptr || !this->state_.manual_level.valid || this->state_.manual_level.value >= 10) {
+  const ProtocolDriver *driver = this->selection_.driver();
+  if (driver == nullptr || !this->state_.manual_level.valid || this->state_.manual_level.value >= 10) {
     this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->send_batch(this->driver_->manual_level(this->state_, kDefaultAAPasskey, this->state_.manual_level.value + 1));
+  this->send_batch(driver->manual_level(this->state_, this->passkey_, this->state_.manual_level.value + 1));
 }
 
 void DieselHeaterBLE::on_level_down_button_press() {
-  if (this->driver_ == nullptr || !this->state_.manual_level.valid || this->state_.manual_level.value <= 1) {
+  const ProtocolDriver *driver = this->selection_.driver();
+  if (driver == nullptr || !this->state_.manual_level.valid || this->state_.manual_level.value <= 1) {
     this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->send_batch(this->driver_->manual_level(this->state_, kDefaultAAPasskey, this->state_.manual_level.value - 1));
+  this->send_batch(driver->manual_level(this->state_, this->passkey_, this->state_.manual_level.value - 1));
 }
 
 void DieselHeaterBLE::on_temp_up_button_press() {
-  if (this->driver_ == nullptr || !this->state_.target_temperature_c.valid) {
+  const ProtocolDriver *driver = this->selection_.driver();
+  if (driver == nullptr || !this->state_.target_temperature_c.valid) {
     this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->send_batch(this->driver_->temperature_c(this->state_, kDefaultAAPasskey, this->state_.target_temperature_c.value + 1.0f));
+  this->send_batch(driver->temperature_c(this->state_, this->passkey_, this->state_.target_temperature_c.value + 1.0f));
 }
 
 void DieselHeaterBLE::on_temp_down_button_press() {
-  if (this->driver_ == nullptr || !this->state_.target_temperature_c.valid) {
+  const ProtocolDriver *driver = this->selection_.driver();
+  if (driver == nullptr || !this->state_.target_temperature_c.valid) {
     this->send_batch(CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE));
     return;
   }
-  this->send_batch(this->driver_->temperature_c(this->state_, kDefaultAAPasskey, this->state_.target_temperature_c.value - 1.0f));
+  this->send_batch(driver->temperature_c(this->state_, this->passkey_, this->state_.target_temperature_c.value - 1.0f));
 }
 
 }  // namespace diesel_heater_ble

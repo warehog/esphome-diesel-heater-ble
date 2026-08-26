@@ -371,3 +371,34 @@ without compiler warnings. The 1,835,008-byte app partition measurements are:
 No hardware, real BLE captures, write acknowledgements, or state-publication
 checks were available. MD1--MD4 support remains app-derived; hardware command
 and response validation is pending.
+
+## T05 explicit configuration and safe selection (code complete, hardware validation pending)
+
+`diesel_heater_ble` now validates `protocol` as `auto`, `aa55_plain`,
+`aa55_encrypted`, `aa66_plain`, or `aa66_encrypted`, and validates decimal
+`passkey` from 1 through 9999. The configured passkey is used for the shared
+status discovery probe (command 1, value 0) and every post-selection command.
+Auto mode activates only after one complete successful parse. Explicit mode
+uses only its configured parser, and a selected format cannot change until the
+BLE connection ends. Discovery sends at most five probes per connection and
+emits at most one initial parse-failure log plus one terminal log. The terminal
+log distinguishes no response (including a possible wrong passkey) from one or
+more received but invalid, malformed, or configured-format-mismatched responses.
+
+`protocol_selection_test` is synthetic and covers all auto/explicit formats,
+mismatches, malformed/incomplete input, selection stability, configured probe
+bytes, both terminal discovery classifications, and their per-connection reset.
+It does not establish hardware passkey behavior or protocol interoperability.
+
+ESPHome 2026.8.1 accepted both auto fixtures and all four explicit
+configuration fixtures; the invalid protocol and passkeys 0/10000 fixtures
+failed schema validation as expected. The normal and ASan host suites passed
+4/4. A five-build firmware matrix (local auto plus the four explicit formats)
+completed with ESP-IDF 5.5.5 and ESP32 GCC 14.2.0. Its padded OTA outputs were
+662,880 bytes (auto), 653,680 bytes (AA55 plain), 653,664 bytes (AA55
+encrypted), 653,664 bytes (AA66 plain), and 653,648 bytes (AA66 encrypted).
+Generated `main.cpp` was inspected for each build and contains the expected
+distinct `set_protocol(ProtocolVariant::...)` and `set_passkey(...)` calls.
+After adding terminal-outcome classification, both normal and ASan host suites
+again passed 4/4, and the full plus minimal ESPHome configurations compiled.
+Hardware discovery for every variant remains unavailable.

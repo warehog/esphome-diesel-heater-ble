@@ -35,5 +35,46 @@ class ProtocolRegistry {
                                               ParseResult &result);
 };
 
+// Per-connection response-driver policy. AUTO accepts the first complete,
+// successfully parsed known response; an explicit format accepts only that
+// matching format. Once selected, a connection cannot switch formats.
+class ProtocolSelection {
+ public:
+  static constexpr uint8_t kMaxDiscoveryProbes = 5;
+
+  explicit ProtocolSelection(ProtocolVariant configured = ProtocolVariant::UNKNOWN) : configured_(configured) {}
+
+  void set_configured(ProtocolVariant configured) {
+    this->configured_ = configured;
+    this->reset();
+  }
+  void reset() {
+    this->driver_ = nullptr;
+    this->probes_sent_ = 0;
+    this->invalid_response_seen_ = false;
+  }
+
+  const ProtocolDriver *driver() const { return this->driver_; }
+  ProtocolVariant configured() const { return this->configured_; }
+  bool should_probe() const { return this->driver_ == nullptr && this->probes_sent_ < kMaxDiscoveryProbes; }
+  bool timed_out() const { return this->driver_ == nullptr && this->probes_sent_ >= kMaxDiscoveryProbes; }
+  bool invalid_response_seen() const { return this->invalid_response_seen_; }
+  void record_probe() {
+    if (this->should_probe()) ++this->probes_sent_;
+  }
+  uint8_t probes_sent() const { return this->probes_sent_; }
+  CommandBatch discovery_probe(uint16_t passkey) const;
+
+  // State is replaced only after the configured/matching driver completes a
+  // parse. `result` reports a mismatch or malformed packet without selection.
+  bool parse(const std::vector<uint8_t> &raw, HeaterState &state, ParseResult &result);
+
+ private:
+  ProtocolVariant configured_{ProtocolVariant::UNKNOWN};
+  const ProtocolDriver *driver_{nullptr};
+  uint8_t probes_sent_{0};
+  bool invalid_response_seen_{false};
+};
+
 }  // namespace diesel_heater_ble
 }  // namespace esphome
