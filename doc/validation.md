@@ -179,3 +179,80 @@ The remote-source rejection command above completed with shell status 0 because
 whitespace errors. `git status --short` completed with status 0 and reported
 only the intentional T01/bootstrap working-tree changes; no generated firmware
 artifact was tracked.
+
+## T02 protocol, state, capability, and command contracts
+
+T02 was implemented on 2026-08-26. It adds the dependency-free,
+currently-unused `components/diesel_heater_ble/contracts.h` and a host-only
+`protocol_contracts_test`. The live `HeaterState`, `ResponseParser`, legacy
+controllers, request encoder, and entity consumers remain unchanged; there is
+no bridge because nothing in the runtime consumes these contracts yet.
+
+The header defines the four app-described response variants, explicit parse and
+command outcomes, a fixed capability bitmask, an eight-byte `CommandFrame`, a
+two-frame fixed `CommandBatch`, and `NormalizedHeaterState`. Its universal
+controls are a Boolean power state, an explicit manual-level/thermostat mode,
+manual level, and target temperature. Power maps raw running states 0 and 3 to
+off and every other raw state to on; the raw byte remains a valid diagnostic.
+Raw mode and step values remain valid diagnostic fields; no universal meaning
+is claimed for raw running-step codes.
+Only raw modes 1 and 2 produce the
+normalized manual-level and thermostat modes; other raw modes are unavailable
+as controls.
+
+Temperatures are Celsius, voltage is volts, and altitude is metres. Temperature
+offset is a signed `float` Celsius delta so a Fahrenheit-source offset can be
+converted by multiplying by 5/9 without rounding. Every common and extended
+observation has explicit validity, including error code; start/auto/run timer
+values; automatic start/stop; language; tank volume; pump type; RF433;
+temperature and altitude units; and automatic heating. The extracted app does
+not establish the physical unit of the three reported timer values, so they
+carry the explicit `PROTOCOL_TICKS` unit until evidence supports a concrete
+minutes unit. A default or invalidated state has `valid == false` and all of
+those fields unavailable.
+
+`CommandBatch` owns two `std::array` frames and is trivially-copyable, so
+contract construction does not allocate per notification. Its count and frame
+storage are private. A transport must use `sendable()`, which requires `READY`
+and a non-empty bounded batch; `READY` with no frame is not sendable. Two
+frames cover the current mode-then-value operation; bounded delivery and any
+larger future operation remain outside this task.
+
+The capability matrix is **app-derived** from
+`doc/app-v1.20-protocol-extract.js`: MD1--MD4 expose status, power, mode,
+manual level, set temperature, and clock; only encrypted MD2/MD4 expose the
+extended-settings flag. The absence of extended settings for MD1/MD3 means
+unavailable through the supported app UI, not that heater firmware rejects an
+otherwise unverified request.
+
+The following commands completed successfully with ESPHome 2026.8.1, ESP-IDF
+5.5.5, ESP32 GCC 14.2.0, and CMake 3.31.6:
+
+```sh
+cmake -S tests -B /tmp/diesel-heater-host-tests
+cmake --build /tmp/diesel-heater-host-tests --parallel
+ctest --test-dir /tmp/diesel-heater-host-tests --output-on-failure
+.venv/bin/esphome config tests/esphome-local.yaml
+.venv/bin/esphome compile tests/esphome-local.yaml
+.venv/bin/esphome config tests/esphome-minimal.yaml
+.venv/bin/esphome compile tests/esphome-minimal.yaml
+git diff --check
+```
+
+The host build uses `-Wall -Wextra -Wpedantic`; both registered tests passed
+(2/2), including default and invalidated validity for every state observation,
+the power/mode mapping, fractional negative Celsius offsets, MD1--MD4
+capabilities, and the fixed batch's nonready, READY-empty, full, and overflow
+behavior. The ESPHome gates both validated and compiled. Because the additive
+header is not included by live runtime code, their image sizes are unchanged
+from T01: full local entities used 660,551 bytes with 1,174,336 bytes of
+app-partition margin, and the minimal core used 651,527 bytes with 1,183,360
+bytes of margin. No new warning was emitted by the host build; the existing
+`climate.cpp:121` format warning remains baseline-only ESPHome evidence.
+
+No heater hardware or raw frame capture was available. This task therefore
+does not claim hardware verification, accepted response lengths, parser
+correctness, protocol selection, command delivery, or entity behavior. T03
+must adopt the state contract atomically while making the existing parser safe;
+T04 must replace the legacy request/controller path and remove any transition
+code if one becomes necessary.
