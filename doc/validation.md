@@ -122,3 +122,60 @@ context, but it is not a working-tree refactor baseline: prior to T01 the
 checked-in example imported the published GitHub component rather than a local
 test configuration. T00 therefore records no local full/minimal compile size,
 warning baseline, or partition measurement.
+
+## T01 local build and host-test baseline
+
+This is the working-tree baseline required before refactor runtime changes.
+It was finalized on 2026-08-26 with the toolchain recorded above. Both test
+configurations use only `type: local` external components at `../components`;
+their configuration output resolves that path to this checkout. They contain no
+`github://`, URL, or Git external-component source. Their builds are explicitly
+placed under `/tmp`, so no generated ESPHome output is required in the working
+tree. The test MAC `02:00:00:00:00:01` is a locally administered placeholder,
+not a heater identifier.
+
+`tests/esphome-local.yaml` exercises the core component plus every presently
+supported entity platform and option: climate, 22 sensors, two numbers, power
+switch, and four buttons. `tests/esphome-minimal.yaml` intentionally contains
+only ESP32 BLE tracking, a BLE client, and the core heater component; it has no
+climate, sensor, number, switch, button, or time platform.
+
+The following clean-run commands completed successfully:
+
+```sh
+cmake -S tests -B /tmp/diesel-heater-host-tests
+cmake --build /tmp/diesel-heater-host-tests --parallel
+ctest --test-dir /tmp/diesel-heater-host-tests --output-on-failure
+.venv/bin/esphome config tests/esphome-local.yaml
+.venv/bin/esphome compile tests/esphome-local.yaml
+.venv/bin/esphome config tests/esphome-minimal.yaml
+.venv/bin/esphome compile tests/esphome-minimal.yaml
+! rg -n -i 'github://|https?://|type: git|url:' \
+  tests/esphome-local.yaml tests/esphome-minimal.yaml
+git diff --check
+git status --short
+```
+
+The dependency-free CMake target `protocol_request_smoke` compiled with
+`-Wall -Wextra -Wpedantic` and passed CTest (1/1). It tests only the existing
+request encoder so it can build without ESPHome headers and does not define any
+new protocol behavior.
+
+| Configuration | Image payload | Padded OTA artifact | App partition | Remaining app margin | Clean-build warnings |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Full local entities | 660,551 bytes | 660,672 bytes | 1,835,008 bytes | 1,174,336 bytes (64%) | One existing `-Wformat` warning in `climate.cpp:121`: `%u` receives the `unsigned long` result of `millis()` subtraction. |
+| Minimal core | 651,527 bytes | 651,648 bytes | 1,835,008 bytes | 1,183,360 bytes (64%) | The same existing `climate.cpp:121` `-Wformat` warning. `AUTO_LOAD` brings optional platform support into this baseline build even when no optional entity is configured. |
+
+ESPHome compilation deliberately remains without `-Werror`. The full-build
+format warning is baseline evidence for a later behavior-preserving cleanup;
+T01 does not alter runtime code. Both factory and OTA artifacts were generated
+under their respective `/tmp/diesel-heater-esphome-*` directories. ESPHome may
+create ignored `tests/.esphome` metadata while reading a test configuration; no
+firmware binaries are placed there.
+
+The remote-source rejection command above completed with shell status 0 because
+`rg` found no match (the leading `!` makes that expected no-match a success).
+`git diff --check` completed with status 0 and no output, so it found no
+whitespace errors. `git status --short` completed with status 0 and reported
+only the intentional T01/bootstrap working-tree changes; no generated firmware
+artifact was tracked.

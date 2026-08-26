@@ -16,19 +16,20 @@ api:
 
 wifi:
   networks:
-    - ssid: <ssid>
-      password: <password>
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
 
 external_components:
-  - source: github://warehog/esphome-diesel-heater-ble@main
-    refresh: 0s
+  - source:
+      type: local
+      path: components
     components: [diesel_heater_ble]
 
 esp32_ble_tracker:
 
 ble_client:
   id: ble_client_id
-  mac_address: E0:4E:7A:89:68:D6
+  mac_address: !secret heater_mac_address
 
 diesel_heater_ble:
   ble_client_id: ble_client_id

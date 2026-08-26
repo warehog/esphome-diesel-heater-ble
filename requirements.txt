@@ -1,0 +1,2 @@
+# Pin the toolchain used to validate and build the reference firmware.
+esphome==2026.8.1
