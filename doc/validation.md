@@ -560,3 +560,75 @@ of app-partition headroom. The minimal build reported 656,319 bytes and
 and confirmed-publication evidence is synthetic or compile-derived; no heater
 or BLE adapter was available, so hardware publication/control/fallback checks
 remain unavailable.
+
+## T09 optional-platform decoupling and size evidence (code complete, hardware validation pending)
+
+The core component no longer unconditionally `AUTO_LOAD`s sensor, button,
+number, switch, or climate. Each optional platform module declares only its
+own ESPHome platform dependency. The core header now forward-declares optional
+entity types, and the implementation/header code that names those types is
+guarded by `defined(USE_ESP32) && defined(USE_*)`. Optional platform headers
+are similarly self-guarded because ESPHome's generated umbrella header
+discovers component headers even when the matching platform is not installed.
+
+`tests/esphome-minimal.yaml` remains the checked-in formal BLE-only fixture:
+it contains ESP32 BLE tracking, a BLE client, and `diesel_heater_ble`, but no
+climate, sensor, number, switch, button, or time configuration. Its generated
+`src/esphome/core/defines.h` has no `USE_CLIMATE`, `USE_SENSOR`, `USE_NUMBER`,
+`USE_SWITCH`, `USE_BUTTON`, or `USE_TIME` define. The minimal ELF also has no
+`DieselHeaterClimate`, `PowerSwitch`, `PowerLevelNumber`, `SetTempNumber`, or
+heater button symbols, while the full local ELF contains each of those classes.
+This is compiler/linker evidence that the fixture neither requires nor links
+the component's optional entity-platform code.
+
+The following completed successfully on 2026-08-26 with CMake 3.31.6, GNU C++
+14.2.0, ESPHome 2026.8.1, ESP-IDF 5.5.5, and ESP32 GCC 14.2.0:
+
+```sh
+cmake -S tests -B /tmp/diesel-heater-host-tests
+cmake --build /tmp/diesel-heater-host-tests --parallel
+ctest --test-dir /tmp/diesel-heater-host-tests --output-on-failure
+cmake -S tests -B /tmp/diesel-heater-host-asan -DENABLE_SANITIZERS=ON
+cmake --build /tmp/diesel-heater-host-asan --parallel
+ctest --test-dir /tmp/diesel-heater-host-asan --output-on-failure
+.venv/bin/esphome config tests/esphome-minimal.yaml
+.venv/bin/esphome compile tests/esphome-minimal.yaml
+.venv/bin/esphome config tests/esphome-local.yaml
+.venv/bin/esphome compile tests/esphome-local.yaml
+```
+
+Both host suites passed 10/10; ASan/UBSan reported no finding. The added
+`optional_platform_non_esp_guard_test` defines every optional platform macro
+without `USE_ESP32` and directly includes the real optional headers plus
+`heater.cpp` and `climate.cpp`; it compiles without ESPHome headers, proving
+that those macros cannot accidentally pull platform code into a non-ESP32
+translation unit. The exact build maps queried were
+`/tmp/diesel-heater-esphome-minimal/build/diesel-heater-minimal-test.map` and
+`/tmp/diesel-heater-esphome-local/build/diesel-heater-local-test.map`.
+`xtensa-esp32-elf-nm -C` queried both corresponding ELFs for
+`DieselHeaterClimate|PowerSwitch|PowerLevelNumber|SetTempNumber|Level(Up|Down)Button|Temp(Up|Down)Button`.
+
+| Configuration | T01 payload | T09 payload | Payload delta | T01 padded OTA | T09 padded OTA | Padded delta | T09 remaining app margin |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Full local entities | 660,551 | 668,135 | +7,584 | 660,672 | 668,256 | +7,584 | 1,166,752 |
+| BLE-only minimal | 651,527 | 652,299 | +772 | 651,648 | 652,416 | +768 | 1,182,592 |
+
+The T01 comparison spans the cumulative T02--T09 refactor, so these are exact
+working-tree deltas rather than an attribution of every byte to optional
+platform cleanup. The app partition remains 1,835,008 bytes. The full and
+minimal padded OTA outputs above are respectively
+`/tmp/diesel-heater-esphome-local/build/firmware.ota.bin` and
+`/tmp/diesel-heater-esphome-minimal/build/firmware.ota.bin`.
+
+Explicit-protocol compile-time exclusion is **unproven**. The queried minimal
+auto map contains `protocol.cpp.obj`, `protocol_aa.cpp.obj`, and the 32-byte
+static `kDrivers` storage at map line 56793; its ELF exports
+`ProtocolRegistry::find(ProtocolVariant)`,
+`ProtocolSelection::parse(...)`, `AAProtocolDriver::detect_variant(...)`,
+and `AAProtocolDriver::parse(...)`. Those queried symbols characterize the
+auto image, but are not evidence for a particular explicit configuration. The
+current source uses a static four-entry `AAProtocolDriver` registry and runtime
+`ProtocolVariant` selection; no explicit-protocol build was used to claim that
+any driver code is excluded.
+No hardware or BLE adapter was available, so hardware validation remains
+pending.

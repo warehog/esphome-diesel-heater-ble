@@ -1,5 +1,20 @@
 #include "heater.h"
+
+#if defined(USE_ESP32) && defined(USE_CLIMATE)
 #include "climate.h"
+#endif
+
+#if defined(USE_ESP32) && defined(USE_SENSOR)
+#include "esphome/components/sensor/sensor.h"
+#endif
+
+#if defined(USE_ESP32) && defined(USE_NUMBER)
+#include "esphome/components/number/number.h"
+#endif
+
+#if defined(USE_ESP32) && defined(USE_SWITCH)
+#include "esphome/components/switch/switch.h"
+#endif
 
 #include <cmath>
 
@@ -12,6 +27,7 @@ const char *TAG = "diesel_heater_ble";
 
 namespace {
 
+#if defined(USE_ESP32) && (defined(USE_SENSOR) || defined(USE_NUMBER))
 template<typename T> float sensor_value(const T &value) { return static_cast<float>(value); }
 
 template<> float sensor_value(const TemperatureUnit &value) {
@@ -21,7 +37,9 @@ template<> float sensor_value(const TemperatureUnit &value) {
 template<> float sensor_value(const AltitudeUnit &value) {
   return static_cast<float>(static_cast<uint8_t>(value));
 }
+#endif
 
+#if defined(USE_ESP32) && defined(USE_SENSOR)
 template<typename T> void publish_sensor_field(sensor::Sensor *sensor, const StateField<T> &field) {
   if (sensor == nullptr) {
     return;
@@ -53,7 +71,9 @@ void publish_timed_sensor_field(sensor::Sensor *sensor, const TimedField &field)
     sensor->publish_state(value);
   }
 }
+#endif
 
+#if defined(USE_ESP32) && defined(USE_NUMBER)
 template<typename T> void publish_number_field(number::Number *number, const StateField<T> &field) {
   if (number == nullptr) {
     return;
@@ -69,6 +89,7 @@ template<typename T> void publish_number_field(number::Number *number, const Sta
     number->publish_state(value);
   }
 }
+#endif
 
 }  // namespace
 
@@ -258,10 +279,12 @@ EntityCommandResult DieselHeaterBLE::dispatch_command_(EntityCommandResult admis
 }
 
 void DieselHeaterBLE::dispatch_delivery_events_() {
+#if defined(USE_ESP32) && defined(USE_CLIMATE)
   DeliveryEvent event;
   while (this->delivery_.consume_event(event)) {
     if (this->climate_ != nullptr) this->climate_->on_control_delivery(event.tag, event.success);
   }
+#endif
 }
 
 bool DieselHeaterBLE::state_matches_current_command_(const HeaterState &state) const {
@@ -351,21 +374,22 @@ void DieselHeaterBLE::clear_connection_state_() {
   this->last_batch_rejection_ = CommandResult::READY;
   this->last_delivery_enqueue_ = DeliveryEnqueueResult::QUEUED;
   this->last_delivery_failure_ = DeliveryFailure::NONE;
+#if defined(USE_ESP32) && defined(USE_CLIMATE)
   if (this->climate_ != nullptr) this->climate_->on_heater_disconnect();
+#endif
+#if defined(USE_ESP32) && defined(USE_SWITCH)
   if (this->power_switch_ != nullptr) this->power_switch_->set_has_state(false);
+#endif
   if (unavailable_entities != 0) this->publish_unavailable_entities_(unavailable_entities);
 }
 
 void DieselHeaterBLE::publish_unavailable_entities_(AvailabilityMask entities) {
-  const auto unavailable_sensor = [](sensor::Sensor *entity) {
-    if (entity != nullptr) entity->publish_state(NAN);
-  };
-  const auto unavailable_number = [](number::Number *entity) {
-    if (entity != nullptr) entity->publish_state(NAN);
-  };
-
   const auto unavailable = [entities](AvailabilityEntity identity, auto entity, const auto &publish) {
     if ((entities & availability_bit(identity)) != 0) publish(entity);
+  };
+#if defined(USE_ESP32) && defined(USE_SENSOR)
+  const auto unavailable_sensor = [](sensor::Sensor *entity) {
+    if (entity != nullptr) entity->publish_state(NAN);
   };
   unavailable(AvailabilityEntity::RUNNING_STATE, this->running_state_, unavailable_sensor);
   unavailable(AvailabilityEntity::ERROR_CODE, this->error_code_, unavailable_sensor);
@@ -389,11 +413,17 @@ void DieselHeaterBLE::publish_unavailable_entities_(AvailabilityMask entities) {
   unavailable(AvailabilityEntity::TEMP_UNIT, this->temp_unit_, unavailable_sensor);
   unavailable(AvailabilityEntity::ALTITUDE_UNIT, this->altitude_unit_, unavailable_sensor);
   unavailable(AvailabilityEntity::AUTOMATIC_HEATING, this->automatic_heating_, unavailable_sensor);
+#endif
+#if defined(USE_ESP32) && defined(USE_NUMBER)
+  const auto unavailable_number = [](number::Number *entity) {
+    if (entity != nullptr) entity->publish_state(NAN);
+  };
   unavailable(AvailabilityEntity::POWER_LEVEL_NUMBER, this->power_level_number_, unavailable_number);
   unavailable(AvailabilityEntity::SET_TEMP_NUMBER, this->set_temp_number_, unavailable_number);
-
+#endif
 }
 
+#if defined(USE_ESP32) && defined(USE_CLIMATE)
 void DieselHeaterBLE::update_climate(const HeaterState &new_state) {
   if (this->climate_ == nullptr) {
     return;
@@ -403,14 +433,18 @@ void DieselHeaterBLE::update_climate(const HeaterState &new_state) {
 
   this->climate_->publish_state();
 }
+#endif
 
 void DieselHeaterBLE::update_sensors(const HeaterState &new_state) {
   if (!new_state.valid || !this->lifecycle_.can_publish_state()) {
     return;
   }
 
+#if defined(USE_ESP32) && defined(USE_CLIMATE)
   this->update_climate(new_state);
+#endif
 
+#if defined(USE_ESP32) && defined(USE_SENSOR)
   publish_sensor_field(this->running_state_, new_state.raw_running_state);
   publish_sensor_field(this->error_code_, new_state.error_code);
   publish_sensor_field(this->running_step_, new_state.raw_running_step);
@@ -433,13 +467,18 @@ void DieselHeaterBLE::update_sensors(const HeaterState &new_state) {
   publish_sensor_field(this->temp_unit_, new_state.reported_temperature_unit);
   publish_sensor_field(this->altitude_unit_, new_state.reported_altitude_unit);
   publish_sensor_field(this->automatic_heating_, new_state.automatic_heating_enabled);
+#endif
+#if defined(USE_ESP32) && defined(USE_NUMBER)
   publish_number_field(this->power_level_number_, new_state.manual_level);
   publish_number_field(this->set_temp_number_, new_state.target_temperature_c);
+#endif
 
+#if defined(USE_ESP32) && defined(USE_SWITCH)
   if (this->power_switch_ != nullptr && new_state.power.valid &&
       this->power_switch_->state != new_state.power.value) {
     this->power_switch_->publish_state(new_state.power.value);
   }
+#endif
   this->lifecycle_.mark_entities_published();
   this->availability_.mark_published();
 }
@@ -474,6 +513,7 @@ EntityCommandResult DieselHeaterBLE::on_power_switch(bool state, uint32_t transa
   return this->dispatch_command_(admission, &batch, transaction_id);
 }
 
+#if defined(USE_ESP32) && defined(USE_BUTTON)
 EntityCommandResult DieselHeaterBLE::on_level_up_button_press() {
   if (!this->state_.manual_level.valid) {
     const EntityCommandResult admission = this->admit_command_(EntityOperation::MANUAL_LEVEL);
@@ -505,10 +545,13 @@ EntityCommandResult DieselHeaterBLE::on_temp_down_button_press() {
   }
   return this->on_temp_number(this->state_.target_temperature_c.value - 1.0f);
 }
+#endif
 
+#if defined(USE_ESP32) && defined(USE_CLIMATE)
 EntityCommandResult DieselHeaterBLE::admit_climate_strategy(ClimateStrategy strategy) const {
   return EntityControlPolicy::admit(this->lifecycle_, strategy);
 }
+#endif
 
 }  // namespace diesel_heater_ble
 }  // namespace esphome

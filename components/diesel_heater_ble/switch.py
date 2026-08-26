@@ -4,6 +4,9 @@ import esphome.config_validation as cv
 
 from . import CONF_DIESEL_HEATER_BLE, DieselHeaterBLE, diesel_heater_ble_ns
 
+DEPENDENCIES = ["diesel_heater_ble"]
+AUTO_LOAD = ["switch"]
+
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(CONF_DIESEL_HEATER_BLE): cv.use_id(DieselHeaterBLE),

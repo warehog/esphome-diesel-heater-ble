@@ -1,11 +1,15 @@
+#ifdef USE_ESP32
+#include "esphome/core/defines.h"
+#endif
+
+#if defined(USE_ESP32) && defined(USE_CLIMATE)
+
 #include "climate.h"
 #include "heater.h"
 
 #include <algorithm>
 #include <cmath>
 #include <string>
-
-#ifdef USE_ESP32
 
 namespace esphome {
 namespace diesel_heater_ble {
@@ -484,4 +488,4 @@ void DieselHeaterClimate::control(const climate::ClimateCall &call) {
 }  // namespace diesel_heater_ble
 }  // namespace esphome
 
-#endif  // USE_ESP32
+#endif  // USE_ESP32 && USE_CLIMATE

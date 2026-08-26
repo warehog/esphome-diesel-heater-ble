@@ -4,6 +4,9 @@ import esphome.config_validation as cv
 
 from . import CONF_DIESEL_HEATER_BLE, DieselHeaterBLE, diesel_heater_ble_ns
 
+DEPENDENCIES = ["diesel_heater_ble"]
+AUTO_LOAD = ["button"]
+
 CONF_LEVEL_UP = "level_up"
 CONF_LEVEL_DOWN = "level_down"
 CONF_TEMP_UP = "temp_up"

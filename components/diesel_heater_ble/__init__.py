@@ -1,11 +1,10 @@
 import esphome.codegen as cg
-from esphome.components import ble_client, sensor
+from esphome.components import ble_client
 import esphome.config_validation as cv
 from esphome.const import CONF_ID
 
 CODEOWNERS = ["@warehog"]
 DEPENDENCIES = ["ble_client"]
-AUTO_LOAD = ["sensor", "button", "number", "switch", "climate"]
 
 CONF_DIESEL_HEATER_BLE = "diesel_heater_ble"
 CONF_PROTOCOL = "protocol"
@@ -13,7 +12,7 @@ CONF_PASSKEY = "passkey"
 
 diesel_heater_ble_ns = cg.esphome_ns.namespace("diesel_heater_ble")
 DieselHeaterBLE = diesel_heater_ble_ns.class_(
-    "DieselHeaterBLE", sensor.Sensor, cg.Component, ble_client.BLEClientNode
+    "DieselHeaterBLE", cg.Component, ble_client.BLEClientNode
 )
 ProtocolVariant = diesel_heater_ble_ns.enum("ProtocolVariant", is_class=True)
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(USE_ESP32) && defined(USE_NUMBER)
+
 #include "esphome/components/number/number.h"
 #include "esphome/core/component.h"
 
@@ -26,3 +28,5 @@ class SetTempNumber : public number::Number, public Parented<DieselHeaterBLE> {
 
 }  // namespace diesel_heater_ble
 }  // namespace esphome
+
+#endif  // USE_ESP32 && USE_NUMBER

@@ -84,3 +84,9 @@ add_test(NAME entity_static_guard COMMAND ${CMAKE_COMMAND}
   -DCOMPONENT_DIR=${CMAKE_CURRENT_LIST_DIR}/../components/diesel_heater_ble
   -P ${CMAKE_CURRENT_LIST_DIR}/entity_static_guard.cmake
 )
+
+add_executable(optional_platform_non_esp_guard_test optional_platform_non_esp_guard_test.cpp)
+target_compile_features(optional_platform_non_esp_guard_test PRIVATE cxx_std_17)
+target_compile_options(optional_platform_non_esp_guard_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME optional_platform_non_esp_guard_test COMMAND optional_platform_non_esp_guard_test)

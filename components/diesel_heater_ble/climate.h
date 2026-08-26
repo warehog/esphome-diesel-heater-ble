@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef USE_ESP32
+#if defined(USE_ESP32) && defined(USE_CLIMATE)
 
 #include "esphome/components/climate/climate.h"
 #include "esphome/core/component.h"
@@ -85,4 +85,4 @@ class DieselHeaterClimate : public climate::Climate, public Component {
 }  // namespace diesel_heater_ble
 }  // namespace esphome
 
-#endif  // USE_ESP32
+#endif  // USE_ESP32 && USE_CLIMATE

@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(USE_ESP32) && defined(USE_BUTTON)
+
 #include "esphome/components/button/button.h"
 #include "esphome/core/log.h"
 #include "heater.h"
@@ -41,3 +43,5 @@ class TempDownButton : public button::Button, public Parented<DieselHeaterBLE> {
 
 }  // namespace diesel_heater_ble
 }  // namespace esphome
+
+#endif  // USE_ESP32 && USE_BUTTON
