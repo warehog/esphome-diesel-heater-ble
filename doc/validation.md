@@ -256,3 +256,59 @@ correctness, protocol selection, command delivery, or entity behavior. T03
 must adopt the state contract atomically while making the existing parser safe;
 T04 must replace the legacy request/controller path and remove any transition
 code if one becomes necessary.
+
+## T03 safe, atomic legacy parsing (code complete, hardware validation pending)
+
+T03 was implemented on 2026-08-26. `ResponseParser` keeps its legacy entry
+point but now classifies results with `ParseResult`, checks both raw and
+decrypted two-byte headers, decodes only received encrypted bytes, parses a
+value-initialized `NormalizedHeaterState`, and commits it only on `OK`. The
+runtime's `HeaterState` name is now a narrow alias for that final normalized
+contract; all existing climate, sensor, number, switch, and legacy-controller
+consumers use validity-guarded normalized fields rather than uninitialized raw
+members. The former climate running-step interpretation is retained only as
+the explicitly named `legacy_ui_heating` compatibility field; it is not an
+app-derived or universal protocol meaning. Raw state/mode/step sensors remain
+diagnostic-only.
+
+Safe-read spans are **app-derived** from the documented highest field index:
+MD1 17, MD3 18, MD2 35, and MD4 36 bytes. They protect every indexed read but
+are not acceptance lengths. Separately, the README/app documentation supplies
+a conservative 20-byte plain / 48-byte encrypted completeness policy; the
+parser returns `INCOMPLETE` below that policy. No capture establishes an exact
+wire-frame length, a notification boundary, checksum, or terminator. Neither
+the safe spans nor the 20/48 policy may be promoted to a hardware
+compatibility claim.
+
+`response_parser_safety_test` uses in-source **synthetic** vectors only. It
+tests every prefix from zero through one byte below the documented 20/48
+completeness policy; full-length malformed raw-header and decrypted-header
+mismatch checks; encrypted short-input handling; no mutation after every
+failure; MD1--MD4 error offsets; signed 16-bit case/cabin temperatures; signed
+8-bit offset; voltage/altitude scaling; Fahrenheit Celsius normalization;
+decrypted RF433 state; range invalidation; and plain non-thermostat target
+temperature invalidation. The vectors prove memory and state-transition safety,
+not real-wire lengths or interoperability.
+
+Fresh standard host CTest (3/3) and a clean ASan/UBSan CTest run (3/3) passed
+with CMake 3.31.6 and GNU C++ 14.2.0. Both local ESPHome configurations also
+validated and compiled with ESPHome 2026.8.1 / ESP-IDF 5.5.5 / ESP32 GCC
+14.2.0, with no compiler warnings emitted by either build:
+
+| Configuration | Image payload | Padded binary | Remaining app-partition margin |
+| --- | ---: | ---: | ---: |
+| Full local entities | 662,291 bytes | 662,400 bytes | 1,172,717 bytes |
+| Minimal core | 653,163 bytes | 653,280 bytes | 1,181,845 bytes |
+
+The app partition is 1,835,008 bytes. Host sanitizer support is enabled by the
+`ENABLE_SANITIZERS` CMake option when the compiler is GNU or Clang.
+
+The legacy request/controller architecture remains intentionally in place for
+T04. T03 preserves its existing MD2/MD3 controller-activation boundary: a
+successfully parsed MD1/MD4 response does not activate a controller or commit a
+new runtime-published state. Until T04 performs the dedicated
+Celsius-to-Fahrenheit command encoding work, the legacy controller rejects
+Fahrenheit temperature writes rather than send a normalized Celsius value as
+an on-wire Fahrenheit value. This is a deliberately scoped T03 safety
+regression, not a new command policy. No hardware, raw BLE capture, or device
+state-publication test was available.

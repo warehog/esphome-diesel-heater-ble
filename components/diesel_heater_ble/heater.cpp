@@ -1,12 +1,76 @@
 #include "heater.h"
 #include "climate.h"
 
+#include <cmath>
+
 #ifdef USE_ESP32
 
 namespace esphome {
 namespace diesel_heater_ble {
 
 const char *TAG = "diesel_heater_ble";
+
+namespace {
+
+template<typename T> float sensor_value(const T &value) { return static_cast<float>(value); }
+
+template<> float sensor_value(const TemperatureUnit &value) {
+  return static_cast<float>(static_cast<uint8_t>(value));
+}
+
+template<> float sensor_value(const AltitudeUnit &value) {
+  return static_cast<float>(static_cast<uint8_t>(value));
+}
+
+template<typename T> void publish_sensor_field(sensor::Sensor *sensor, const StateField<T> &field) {
+  if (sensor == nullptr) {
+    return;
+  }
+  if (!field.valid) {
+    if (!std::isnan(sensor->state)) {
+      sensor->publish_state(NAN);
+    }
+    return;
+  }
+  const float value = sensor_value(field.value);
+  if (std::isnan(sensor->state) || sensor->state != value) {
+    sensor->publish_state(value);
+  }
+}
+
+void publish_timed_sensor_field(sensor::Sensor *sensor, const TimedField &field) {
+  if (sensor == nullptr) {
+    return;
+  }
+  if (!field.valid) {
+    if (!std::isnan(sensor->state)) {
+      sensor->publish_state(NAN);
+    }
+    return;
+  }
+  const float value = static_cast<float>(field.value);
+  if (std::isnan(sensor->state) || sensor->state != value) {
+    sensor->publish_state(value);
+  }
+}
+
+template<typename T> void publish_number_field(number::Number *number, const StateField<T> &field) {
+  if (number == nullptr) {
+    return;
+  }
+  if (!field.valid) {
+    if (!std::isnan(number->state)) {
+      number->publish_state(NAN);
+    }
+    return;
+  }
+  const float value = sensor_value(field.value);
+  if (std::isnan(number->state) || number->state != value) {
+    number->publish_state(value);
+  }
+}
+
+}  // namespace
 
 void DieselHeaterBLE::loop() {
   if (this->node_state == esp32_ble_tracker::ClientState::ESTABLISHED) {
@@ -105,20 +169,32 @@ bool DieselHeaterBLE::ble_register_for_notify(esp_gatt_if_t gattc_if, esp_bd_add
 }
 
 void DieselHeaterBLE::on_notification_received(const std::vector<uint8_t> &data) {
-  // ESP_LOGD(TAG, "Notification received: %s", format_hex_pretty(data).c_str());
+  // Parse into a component-local temporary first. This preserves the legacy
+  // controller availability boundary: before T04, MD1/MD4 do not activate a
+  // controller or publish a new runtime state, even though T03's parser can
+  // safely decode their response format for direct testing.
+  HeaterState parsed{};
+  const ParseResult result = ResponseParser::parse(data, parsed);
+  if (result != ParseResult::OK) {
+    ESP_LOGD(TAG, "Ignored response, parse result: %u", static_cast<unsigned>(result));
+    return;
+  }
+
+  // Keep the legacy controller entry point until T04, but never select it
+  // from an unvalidated raw header. Resolve it from the successful temporary
+  // parse before committing component state, so an unsupported legacy
+  // variant has exactly the pre-T03 runtime visibility.
+  HeaterController *controller = this->controller_;
   if (this->controller_ == nullptr) {
-    this->controller_ = ControllerSelector::get_controller(ResponseParser::detect_heater_class(data));
-    if (this->controller_ == nullptr) {
-      ESP_LOGD(TAG, "Failed to get controller.");
+    controller = ControllerSelector::get_controller(parsed.variant);
+    if (controller == nullptr) {
+      ESP_LOGD(TAG, "No legacy controller for parsed response variant.");
       return;
     }
   }
 
-  bool ret = ResponseParser::parse(data, this->state_);
-  if (!ret) {
-    ESP_LOGD(TAG, "Failed to parse response.");
-    return;
-  }
+  this->state_ = parsed;
+  this->controller_ = controller;
 }
 
 void DieselHeaterBLE::update_climate(const HeaterState &new_state) {
@@ -132,138 +208,89 @@ void DieselHeaterBLE::update_climate(const HeaterState &new_state) {
 }
 
 void DieselHeaterBLE::update_sensors(const HeaterState &new_state) {
+  if (!new_state.valid) {
+    return;
+  }
+
   this->update_climate(new_state);
 
-  if (running_state_ != nullptr && running_state_->state != new_state.runningstate) {
-    if (this->power_switch_ != nullptr) {
-      this->power_switch_->publish_state(new_state.runningstate);
-    }
-    running_state_->publish_state(new_state.runningstate);
-    return;
-  }
-  if (error_code_ != nullptr && error_code_->state != new_state.errcode) {
-    error_code_->publish_state(new_state.errcode);
-    return;
-  }
-  if (running_step_ != nullptr && running_step_->state != new_state.runningstep) {
-    running_step_->publish_state(new_state.runningstep);
-    return;
-  }
-  if (altitude_ != nullptr && altitude_->state != new_state.altitude) {
-    altitude_->publish_state(new_state.altitude);
-    return;
-  }
-  if (running_mode_ != nullptr && running_mode_->state != new_state.runningmode) {
-    running_mode_->publish_state(new_state.runningmode);
-    return;
-  }
-  if (set_level_ != nullptr && set_level_->state != new_state.setlevel) {
-    if (this->power_level_number_ != nullptr) {
-      this->power_level_number_->publish_state(new_state.setlevel);
-    }
-    set_level_->publish_state(new_state.setlevel);
-    return;
-  }
-  if (set_temp_ != nullptr && set_temp_->state != new_state.settemp) {
-    if (this->set_temp_number_ != nullptr) {
-      this->set_temp_number_->publish_state(new_state.settemp);
-    }
-    set_temp_->publish_state(new_state.settemp);
-    return;
-  }
-  if (set_temp_number_ != nullptr && set_temp_number_->state != new_state.settemp) {
-    set_temp_number_->publish_state(new_state.settemp);
-    return;
-  }
-  if (supply_voltage_ != nullptr && supply_voltage_->state != new_state.supplyvoltage) {
-    supply_voltage_->publish_state(new_state.supplyvoltage);
-    return;
-  }
-  if (case_temp_ != nullptr && case_temp_->state != new_state.casetemp) {
-    case_temp_->publish_state(new_state.casetemp);
-    return;
-  }
-  if (cab_temp_ != nullptr && cab_temp_->state != new_state.cabtemp) {
-    cab_temp_->publish_state(new_state.cabtemp);
-    return;
-  }
-  if (new_state.extras.has_extras) {
-    if (start_time_ != nullptr && start_time_->state != new_state.extras.sttime) {
-      start_time_->publish_state(new_state.extras.sttime);
-      return;
-    }
-    if (auto_time_ != nullptr && auto_time_->state != new_state.extras.autotime) {
-      auto_time_->publish_state(new_state.extras.autotime);
-      return;
-    }
-    if (run_time_ != nullptr && run_time_->state != new_state.extras.runtime) {
-      run_time_->publish_state(new_state.extras.runtime);
-      return;
-    }
-    if (is_auto_ != nullptr && is_auto_->state != new_state.extras.isauto) {
-      is_auto_->publish_state(new_state.extras.isauto);
-      return;
-    }
-    if (language_ != nullptr && language_->state != new_state.extras.language) {
-      language_->publish_state(new_state.extras.language);
-      return;
-    }
-    if (temp_offset_ != nullptr && temp_offset_->state != new_state.extras.tempoffset) {
-      temp_offset_->publish_state(new_state.extras.tempoffset);
-      return;
-    }
-    if (tank_volume_ != nullptr && tank_volume_->state != new_state.extras.tankvolume) {
-      tank_volume_->publish_state(new_state.extras.tankvolume);
-      return;
-    }
-    if (oil_pump_type_ != nullptr && oil_pump_type_->state != new_state.extras.oilpumptype) {
-      oil_pump_type_->publish_state(new_state.extras.oilpumptype);
-      return;
-    }
-    if (rf433_on_off_ != nullptr && rf433_on_off_->state != static_cast<float>(new_state.extras.rf433onoff)) {
-      rf433_on_off_->publish_state(new_state.extras.rf433onoff);
-      return;
-    }
-    if (temp_unit_ != nullptr && temp_unit_->state != new_state.extras.tempunit) {
-      temp_unit_->publish_state(new_state.extras.tempunit);
-      return;
-    }
-    if (altitude_unit_ != nullptr && altitude_unit_->state != new_state.extras.altiunit) {
-      altitude_unit_->publish_state(new_state.extras.altiunit);
-      return;
-    }
-    if (automatic_heating_ != nullptr && automatic_heating_->state != new_state.extras.automaticheating) {
-      automatic_heating_->publish_state(new_state.extras.automaticheating);
-      return;
-    }
+  publish_sensor_field(this->running_state_, new_state.raw_running_state);
+  publish_sensor_field(this->error_code_, new_state.error_code);
+  publish_sensor_field(this->running_step_, new_state.raw_running_step);
+  publish_sensor_field(this->altitude_, new_state.altitude_m);
+  publish_sensor_field(this->running_mode_, new_state.raw_operating_mode);
+  publish_sensor_field(this->set_level_, new_state.manual_level);
+  publish_sensor_field(this->set_temp_, new_state.target_temperature_c);
+  publish_sensor_field(this->supply_voltage_, new_state.supply_voltage_v);
+  publish_sensor_field(this->case_temp_, new_state.case_temperature_c);
+  publish_sensor_field(this->cab_temp_, new_state.cabin_temperature_c);
+  publish_timed_sensor_field(this->start_time_, new_state.start_time);
+  publish_timed_sensor_field(this->auto_time_, new_state.auto_time);
+  publish_timed_sensor_field(this->run_time_, new_state.run_time);
+  publish_sensor_field(this->is_auto_, new_state.automatic_start_stop_enabled);
+  publish_sensor_field(this->language_, new_state.language);
+  publish_sensor_field(this->temp_offset_, new_state.temperature_offset_c);
+  publish_sensor_field(this->tank_volume_, new_state.tank_volume);
+  publish_sensor_field(this->oil_pump_type_, new_state.oil_pump_type);
+  publish_sensor_field(this->rf433_on_off_, new_state.rf433_enabled);
+  publish_sensor_field(this->temp_unit_, new_state.reported_temperature_unit);
+  publish_sensor_field(this->altitude_unit_, new_state.reported_altitude_unit);
+  publish_sensor_field(this->automatic_heating_, new_state.automatic_heating_enabled);
+  publish_number_field(this->power_level_number_, new_state.manual_level);
+  publish_number_field(this->set_temp_number_, new_state.target_temperature_c);
+
+  if (this->power_switch_ != nullptr && new_state.power.valid &&
+      this->power_switch_->state != new_state.power.value) {
+    this->power_switch_->publish_state(new_state.power.value);
   }
 }
 
 void DieselHeaterBLE::on_power_level_number(float value) {
+  if (this->controller_ == nullptr) {
+    return;
+  }
   this->sent_requests(this->controller_->gen_level_command(this->state_, value));
 }
 
 void DieselHeaterBLE::on_temp_number(float value) {
+  if (this->controller_ == nullptr) {
+    return;
+  }
   this->sent_requests(this->controller_->gen_temp_command(this->state_, value));
 }
 
 void DieselHeaterBLE::on_power_switch(bool state) {
+  if (this->controller_ == nullptr) {
+    return;
+  }
   this->sent_requests(this->controller_->gen_power_command(this->state_, state));
 }
 
 void DieselHeaterBLE::on_level_up_button_press() {
+  if (this->controller_ == nullptr) {
+    return;
+  }
   this->sent_requests(this->controller_->gen_level_up_command(this->state_));
 }
 
 void DieselHeaterBLE::on_level_down_button_press() {
+  if (this->controller_ == nullptr) {
+    return;
+  }
   this->sent_requests(this->controller_->gen_level_down_command(this->state_));
 }
 
 void DieselHeaterBLE::on_temp_up_button_press() {
+  if (this->controller_ == nullptr) {
+    return;
+  }
   this->sent_requests(this->controller_->gen_temp_up_command(this->state_));
 }
 
 void DieselHeaterBLE::on_temp_down_button_press() {
+  if (this->controller_ == nullptr) {
+    return;
+  }
   this->sent_requests(this->controller_->gen_temp_down_command(this->state_));
 }
 

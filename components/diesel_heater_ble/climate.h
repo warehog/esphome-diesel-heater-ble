@@ -5,11 +5,12 @@
 #include "esphome/components/climate/climate.h"
 #include "esphome/core/component.h"
 
+#include "state.h"
+
 namespace esphome {
 namespace diesel_heater_ble {
 
 class DieselHeaterBLE;
-struct HeaterState;
 
 class DieselHeaterClimate : public climate::Climate, public Component {
  public:
@@ -51,7 +52,6 @@ class DieselHeaterClimate : public climate::Climate, public Component {
   /// user HEAT requests and bypass_timers is used for user-driven changes.
   void apply_external_control_(bool force_start_request, bool bypass_timers);
   bool refresh_using_external_(uint32_t now);
-  bool is_heating_step_(uint8_t running_step) const { return running_step == 2 || running_step == 3; }
 
   DieselHeaterBLE *heater_;
 

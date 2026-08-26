@@ -21,3 +21,12 @@ or unredacted captures containing sensitive identifiers. Prefer anonymized raw
 bytes with a reproducible checksum and keep private originals outside the
 repository. Synthetic fixtures must be labelled `synthetic` and must never be
 described as hardware or capture evidence.
+
+## T03 synthetic parser vectors
+
+`tests/response_parser_safety_test.cpp` contains in-source **synthetic**
+vectors derived from the app/docs field maps. They intentionally exercise each
+prefix below the docs/app-derived 20/48 completeness policy, safe-read bounds,
+normalization, signed values, and atomic no-mutation failures. They are not
+captured notifications: their sizes do not establish wire-frame boundaries,
+checksums, or terminators.

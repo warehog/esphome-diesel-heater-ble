@@ -91,6 +91,13 @@ constexpr bool power_from_raw_running_state(uint8_t raw_running_state) {
   return raw_running_state != 0 && raw_running_state != 3;
 }
 
+// This preserves only the pre-T03 climate UI behavior: it displayed HEATING
+// for raw running-step values 2 and 3. It is not app-derived evidence, a
+// protocol semantic, or a universal heater-state meaning.
+constexpr bool legacy_ui_heating_from_raw_running_step(uint8_t raw_running_step) {
+  return raw_running_step == 2 || raw_running_step == 3;
+}
+
 // The response format uses raw mode 1 for manual level and raw mode 2 for the
 // heater thermostat. Other raw values, including 0, are diagnostic-only until
 // stronger evidence defines a universal control meaning.
@@ -174,15 +181,19 @@ template<typename T> struct StateField {
 };
 
 enum class TemperatureUnit : uint8_t {
-  UNKNOWN = 0,
-  CELSIUS,
-  FAHRENHEIT,
+  // The numeric values intentionally retain the documented wire values so
+  // the legacy numeric diagnostic sensor remains compatible. Validity, not a
+  // sentinel value, distinguishes an unavailable unit from Celsius.
+  CELSIUS = 0,
+  FAHRENHEIT = 1,
+  UNKNOWN = 0xFF,
 };
 
 enum class AltitudeUnit : uint8_t {
-  UNKNOWN = 0,
-  METRES,
-  IMPERIAL,
+  // As with TemperatureUnit, preserve 0/1 for the retained diagnostic sensor.
+  METRES = 0,
+  IMPERIAL = 1,
+  UNKNOWN = 0xFF,
 };
 
 // The app exposes three 16-bit timer observations but does not establish their
@@ -223,12 +234,18 @@ struct NormalizedHeaterState {
   StateField<uint8_t> manual_level{};
   StateField<float> target_temperature_c{};
 
+  // Preserve only the legacy climate action mapping. Do not use this as a
+  // protocol-wide running-step interpretation or as a control input.
+  StateField<bool> legacy_ui_heating{};
+
   // Common observations.
   StateField<uint8_t> error_code{};
   StateField<float> case_temperature_c{};
   StateField<float> cabin_temperature_c{};
   StateField<float> supply_voltage_v{};
-  StateField<uint16_t> altitude_m{};
+  // Keep fractional metres: encrypted responses describe altitude in tenths
+  // and may report it in imperial units.
+  StateField<float> altitude_m{};
   StateField<float> temperature_offset_c{};
 
   // Extended encrypted-format observations. Each remains unavailable on a
@@ -245,8 +262,9 @@ struct NormalizedHeaterState {
   StateField<AltitudeUnit> reported_altitude_unit{};
   StateField<bool> automatic_heating_enabled{};
 
-  // Raw protocol diagnostics are not universal controls. In particular, the
-  // protocol has no evidence-backed universal running-step meaning.
+  // Raw protocol diagnostics are not universal controls. The raw step remains
+  // diagnostic-only; legacy_ui_heating above is only a compatibility mapping
+  // for the existing climate action and has no broader protocol meaning.
   StateField<uint8_t> acknowledged_command{};
   StateField<uint8_t> raw_running_state{};
   StateField<uint8_t> raw_operating_mode{};

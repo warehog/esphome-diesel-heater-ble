@@ -1,6 +1,6 @@
 # Diesel Heater Bluetooth Protocol Documentation
 
-This document describes the four message formats (protocols) used by the diesel heater over Bluetooth. Two protocols are received unencrypted (MD1 and MD3) and two are received encrypted (MD2 and MD4). In the encrypted messages the payload is divided into 6 blocks of 8 bytes which are decrypted by XOR-ing each byte with the corresponding byte in the string `"password"` (i.e. with the bytes `[112, 97, 115, 115, 119, 111, 114, 100]`).
+This document describes the four message formats (protocols) used by the diesel heater over Bluetooth. Two protocols are received unencrypted (MD1 and MD3) and two are received encrypted (MD2 and MD4). The app-derived encrypted decoder applies the repeating `"password"` XOR key (the bytes `[112, 97, 115, 115, 119, 111, 114, 100]`) across six eight-byte blocks; this is not capture proof that every encrypted BLE notification is exactly 48 bytes.
 
 ---
 
@@ -11,11 +11,34 @@ This document describes the four message formats (protocols) used by the diesel 
 - **MD2**: Encrypted message that, after decryption, has header `[170, 85]`.  
 - **MD4**: Encrypted message that, after decryption, has header `[170, 102]`.
 
+### Documented completeness policy and evidence limit
+
+The repository README documents 20-byte plain responses and 48-byte encrypted
+responses. The legacy single-notification parser uses those as its
+**docs/app-derived completeness policy**: a recognized plain response below 20
+bytes, or encrypted response below 48 bytes, is incomplete and never changes
+published state. This is deliberately a conservative policy, not a claim that
+captures prove those exact wire lengths or notification boundaries.
+
+### Parser safe-read spans
+
+The current parser uses the greatest documented field index plus one solely as
+an **app-derived safe-read span**: 17 bytes for MD1, 18 bytes for MD3, 35 bytes
+for MD2, and 36 bytes for MD4. These lower spans protect indexed reads; they
+do not determine acceptance or substitute for the separate 20/48 completeness
+policy.
+
+Neither the completeness policy nor these spans are capture proof. The parser
+does not invent checksum, terminator, or framing validation absent from the
+APK/docs evidence. Real capture or hardware validation remains required before
+making a wire-level compatibility claim.
+
 ---
 
 ## MD1 Protocol (Unencrypted, Header: `[170, 85]`)
 
-**Message Length:** ~17 bytes
+**Safe-read span:** 17 bytes (fields through byte 16).
+**Documented completeness policy:** 20 bytes (docs/app-derived; not capture proof).
 
 | Byte Index | Field Name    | Calculation / Description                                                                                       | Notes |
 |------------|---------------|-----------------------------------------------------------------------------------------------------------------|-------|
@@ -36,7 +59,8 @@ This document describes the four message formats (protocols) used by the diesel 
 
 ## MD3 Protocol (Unencrypted, Header: `[170, 102]`)
 
-**Message Length:** ~18 bytes
+**Safe-read span:** 18 bytes (fields through byte 17).
+**Documented completeness policy:** 20 bytes (docs/app-derived; not capture proof).
 
 | Byte Index | Field Name    | Calculation / Description                                                                                        | Notes |
 |------------|---------------|------------------------------------------------------------------------------------------------------------------|-------|
@@ -57,10 +81,13 @@ This document describes the four message formats (protocols) used by the diesel 
 
 ## MD2 Protocol (Encrypted, Decrypted Header: `[170, 85]`)
 
-**Message Length:** ~35 bytes (bytes with indexes **0–34** are used)
+**Safe-read span:** 35 bytes (fields through byte 34).
+**Documented completeness policy:** 48 bytes (docs/app-derived; not capture proof).
 
 > **Decryption:**  
-> For each block of 8 bytes (total 6 blocks), perform:  
+> The app decoder iterates six 8-byte blocks; the component instead applies the
+> repeating key only to received bytes. The loop is not wire-length proof. For
+> each app-decoder block, perform:
 > ```
 > for (j = 0; j < 6; j++) {
 >   baseIndex = 8 * j;
@@ -106,10 +133,12 @@ This document describes the four message formats (protocols) used by the diesel 
 
 ## MD4 Protocol (Encrypted, Decrypted Header: `[170, 102]`)
 
-**Message Length:** ~36 bytes (bytes with indexes **0–35** are used)
+**Safe-read span:** 36 bytes (fields through byte 35).
+**Documented completeness policy:** 48 bytes (docs/app-derived; not capture proof).
 
 > **Decryption:**  
-> The same decryption procedure as for MD2 applies (XOR each 8-byte block with `"password"`).
+> The same received-byte procedure as for MD2 applies (repeating XOR with
+> `"password"`); the app's six-block loop is not wire-length proof.
 
 | Byte Index | Field Name       | Calculation / Description                                                                                      | Notes |
 |------------|------------------|---------------------------------------------------------------------------------------------------------------|-------|

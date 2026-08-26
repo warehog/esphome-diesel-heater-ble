@@ -53,7 +53,8 @@ uint8_t DieselHeaterClimate::stage_level_for_error_(float error_c) const {
 
 bool DieselHeaterClimate::refresh_using_external_(uint32_t now) {
   const bool was_using_external = this->using_external_;
-  const bool is_heating = this->heater_->get_state().runningstate != 0;
+  const HeaterState state = this->heater_->get_state();
+  const bool is_heating = state.valid && state.power.valid && state.power.value;
   const u_int32_t timeout = is_heating ? this->ext_temp_timeout_heating_ms_ : this->ext_temp_timeout_ms_;
   const bool has_recent_sample =
       this->last_ext_temp_ms_ != 0 &&
@@ -67,14 +68,18 @@ void DieselHeaterClimate::sync_from_heater(const HeaterState &state) {
 
   if (using_external) {
     this->current_temperature = this->external_temperature_;
+  } else if (state.cabin_temperature_c.valid) {
+    this->current_temperature = state.cabin_temperature_c.value;
   } else {
-    this->current_temperature = state.cabtemp;
+    this->current_temperature = NAN;
   }
 
   // Allow heater-side target updates when not in external strategy, so remote
   // control changes are reflected while preserving high-resolution external control.
-  if (!using_external && state.settemp >= CLIMATE_MIN_TARGET_C && state.settemp <= CLIMATE_MAX_TARGET_C) {
-    this->target_temperature = state.settemp;
+  if (!using_external && state.target_temperature_c.valid &&
+      state.target_temperature_c.value >= CLIMATE_MIN_TARGET_C &&
+      state.target_temperature_c.value <= CLIMATE_MAX_TARGET_C) {
+    this->target_temperature = state.target_temperature_c.value;
   }
 
   if (std::isnan(this->target_temperature) || this->target_temperature < CLIMATE_MIN_TARGET_C ||
@@ -82,7 +87,7 @@ void DieselHeaterClimate::sync_from_heater(const HeaterState &state) {
     this->target_temperature = CLIMATE_DEFAULT_TARGET_C;
   }
 
-  const bool heater_on = state.runningstate != 0;
+  const bool heater_on = state.power.valid && state.power.value;
 
   // Mirror device on/off state into our intent, except in external auto where
   // the device intentionally cycles on/off under our control.
@@ -94,22 +99,25 @@ void DieselHeaterClimate::sync_from_heater(const HeaterState &state) {
   if (this->mode == climate::CLIMATE_MODE_OFF) {
     this->action = climate::CLIMATE_ACTION_OFF;
   } else {
-    this->action = this->is_heating_step_(state.runningstep) ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;
+    this->action = state.legacy_ui_heating.valid && state.legacy_ui_heating.value
+                       ? climate::CLIMATE_ACTION_HEATING
+                       : climate::CLIMATE_ACTION_IDLE;
   }
 
   // Keep user control preference synced with real heater mode, except when running
   // the external-auto strategy that intentionally uses manual backend levels.
-  if (state.runningmode == 2) {
+  if (state.operating_mode.valid && state.operating_mode.value == OperatingMode::THERMOSTAT) {
     this->auto_requested_ = true;
-  } else if (state.runningmode == 1 && !(using_external && this->auto_requested_)) {
+  } else if (state.operating_mode.valid && state.operating_mode.value == OperatingMode::MANUAL_LEVEL &&
+             !(using_external && this->auto_requested_)) {
     this->auto_requested_ = false;
   }
 
   if (this->auto_requested_) {
     this->set_fan_mode_(climate::CLIMATE_FAN_AUTO);
     this->clear_custom_fan_mode_();
-  } else {
-    this->set_custom_fan_mode_(manual_level_mode_name(static_cast<uint8_t>(state.setlevel)));
+  } else if (state.manual_level.valid) {
+    this->set_custom_fan_mode_(manual_level_mode_name(state.manual_level.value));
   }
 }
 
@@ -118,7 +126,8 @@ void DieselHeaterClimate::loop() {
   const bool external_usage_changed = this->refresh_using_external_(now);
 
   if (external_usage_changed && !this->using_external_) {
-    ESP_LOGW(TAG, "External sensor timed out (%u ms), falling back to built-in controls", now - this->last_ext_temp_ms_);
+    ESP_LOGW(TAG, "External sensor timed out (%lu ms), falling back to built-in controls",
+             static_cast<unsigned long>(now - this->last_ext_temp_ms_));
     if (this->auto_requested_ && this->climate_heat_requested_) {
       this->heater_->on_power_switch(true);
       this->heater_->on_temp_number(this->target_temperature);
@@ -169,7 +178,8 @@ void DieselHeaterClimate::apply_external_control_(bool force_start_request, bool
       bypass_timers || this->last_heat_transition_ms_ == 0 ||
       static_cast<uint32_t>(now - this->last_heat_transition_ms_) >= this->ext_min_off_time_ms_;
 
-  bool heater_on = this->heater_->get_state().runningstate != 0;
+  const HeaterState state = this->heater_->get_state();
+  bool heater_on = state.valid && state.power.valid && state.power.value;
 
   if (!heater_on) {
     const bool allowed_by_error = force_start_request ? (error > 0.0f) : (error >= this->ext_auto_on_error_c_);
@@ -236,8 +246,10 @@ void DieselHeaterClimate::setup() {
   HeaterState state = this->heater_->get_state();
   this->sync_from_heater(state);
 
-  ESP_LOGD(TAG, "Climate initialized. Mode: %d, Temp: %.1f, Running: %d, Running mode: %d", static_cast<int>(this->mode),
-           this->target_temperature, state.runningstate, state.runningmode);
+  const unsigned running_state = state.raw_running_state.valid ? state.raw_running_state.value : 0;
+  const unsigned running_mode = state.raw_operating_mode.valid ? state.raw_operating_mode.value : 0;
+  ESP_LOGD(TAG, "Climate initialized. Mode: %d, Temp: %.1f, Running: %u, Running mode: %u",
+           static_cast<int>(this->mode), this->target_temperature, running_state, running_mode);
 
   this->publish_state();
 }
