@@ -6,6 +6,7 @@
 #include "esphome/core/component.h"
 
 #include "state.h"
+#include "climate_session.h"
 
 namespace esphome {
 namespace diesel_heater_ble {
@@ -20,6 +21,7 @@ class DieselHeaterClimate : public climate::Climate, public Component {
   void setup() override;
   void loop() override;
   void sync_from_heater(const HeaterState &state);
+  void on_heater_disconnect();
 
   void set_heater(DieselHeaterBLE *heater) { this->heater_ = heater; }
 
@@ -53,7 +55,7 @@ class DieselHeaterClimate : public climate::Climate, public Component {
   void apply_external_control_(bool force_start_request, bool bypass_timers);
   bool refresh_using_external_(uint32_t now);
 
-  DieselHeaterBLE *heater_;
+  DieselHeaterBLE *heater_{nullptr};
 
   // External temperature control state
   float external_temperature_{NAN};
@@ -82,6 +84,7 @@ class DieselHeaterClimate : public climate::Climate, public Component {
   uint32_t ext_min_off_time_ms_{20 * 60 * 1000};
   uint32_t ext_overshoot_hold_ms_{3 * 60 * 1000};
   uint32_t ext_level_update_interval_ms_{10 * 1000};
+  ClimateFanSession fan_session_{};
 };
 
 }  // namespace diesel_heater_ble

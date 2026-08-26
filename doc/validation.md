@@ -180,6 +180,44 @@ whitespace errors. `git status --short` completed with status 0 and reported
 only the intentional T01/bootstrap working-tree changes; no generated firmware
 artifact was tracked.
 
+## T06 lifecycle and command-admission validation
+
+T06 was validated on 2026-08-26 using the T01 toolchain (ESPHome 2026.8.1,
+ESP-IDF 5.5.5, and ESP32 GCC 14.2.0). The dependency-free
+`lifecycle_admission_test` covers ordered rejection for connection, handle,
+driver, capability, state, and value failures; each rejected path has zero
+writes through the same dispatch gate used by `DieselHeaterBLE`. It also covers
+discovery and idle disconnects, distinct exactly-once unavailable edges for
+all 24 registered sensor/number identities, stale-publication suppression,
+and rapid reconnect requiring a fresh complete response. ESPHome 2026.8.1
+does not provide a native unavailable notification for this component's
+switch or climate base classes; T06 clears their local state without claiming
+a frontend unavailable publication.
+
+The following commands completed successfully:
+
+```sh
+cmake -S tests -B /tmp/diesel-heater-host-tests
+cmake --build /tmp/diesel-heater-host-tests --parallel
+ctest --test-dir /tmp/diesel-heater-host-tests --output-on-failure
+cmake -S tests -B /tmp/diesel-heater-host-asan -DENABLE_SANITIZERS=ON
+cmake --build /tmp/diesel-heater-host-asan --parallel
+ctest --test-dir /tmp/diesel-heater-host-asan --output-on-failure
+.venv/bin/esphome config tests/esphome-local.yaml
+.venv/bin/esphome compile tests/esphome-local.yaml
+.venv/bin/esphome config tests/esphome-minimal.yaml
+.venv/bin/esphome compile tests/esphome-minimal.yaml
+git diff --check
+```
+
+Both host suites passed 5/5 tests; the sanitizer suite reported no ASan/UBSan
+finding. Full local compilation produced a 664,391-byte image with 1,170,496
+bytes of application-partition headroom. Minimal compilation produced a
+654,699-byte image with 1,180,192 bytes of headroom. No compatible heater or
+BLE adapter is available in this workspace, so disconnect/reconnect and
+unavailable-state behavior are synthetic/host-tested; hardware verification
+remains unavailable.
+
 ## T02 protocol, state, capability, and command contracts
 
 T02 was implemented on 2026-08-26. It adds the dependency-free,

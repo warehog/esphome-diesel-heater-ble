@@ -114,11 +114,41 @@ void DieselHeaterClimate::sync_from_heater(const HeaterState &state) {
   }
 
   if (this->auto_requested_) {
+    this->fan_session_.set_auto();
     this->set_fan_mode_(climate::CLIMATE_FAN_AUTO);
     this->clear_custom_fan_mode_();
   } else if (state.manual_level.valid) {
+    this->fan_session_.set_manual();
     this->set_custom_fan_mode_(manual_level_mode_name(state.manual_level.value));
+  } else {
+    this->fan_session_.clear();
+    this->fan_mode.reset();
+    this->clear_custom_fan_mode_();
   }
+}
+
+void DieselHeaterClimate::on_heater_disconnect() {
+  // A reconnect is a new heater session. Do not let locally retained external
+  // automation intent send a command before that session has confirmed state.
+  this->using_external_ = false;
+  this->auto_requested_ = false;
+  this->climate_heat_requested_ = false;
+  this->external_temperature_ = NAN;
+  this->last_ext_temp_ms_ = 0;
+  this->last_level_update_ms_ = 0;
+  this->last_commanded_level_ = 1;
+  this->last_heat_transition_ms_ = 0;
+  this->overshoot_start_ms_ = 0;
+  this->current_temperature = NAN;
+  this->target_temperature = NAN;
+  this->mode = climate::CLIMATE_MODE_OFF;
+  this->action = climate::CLIMATE_ACTION_OFF;
+  this->fan_session_.clear();
+  this->fan_mode.reset();
+  this->clear_custom_fan_mode_();
+  // Climate has no native unavailable publication in the supported ESPHome
+  // API. Clearing its local state prevents stale values from being republished.
+  this->set_has_state(false);
 }
 
 void DieselHeaterClimate::loop() {

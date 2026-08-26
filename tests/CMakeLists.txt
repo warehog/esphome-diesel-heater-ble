@@ -52,3 +52,10 @@ target_link_libraries(protocol_selection_test PRIVATE diesel_heater_protocol)
 target_compile_options(protocol_selection_test PRIVATE -Wall -Wextra -Wpedantic)
 
 add_test(NAME protocol_selection_test COMMAND protocol_selection_test)
+
+add_executable(lifecycle_admission_test lifecycle_admission_test.cpp)
+target_compile_features(lifecycle_admission_test PRIVATE cxx_std_17)
+target_link_libraries(lifecycle_admission_test PRIVATE diesel_heater_protocol)
+target_compile_options(lifecycle_admission_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME lifecycle_admission_test COMMAND lifecycle_admission_test)
