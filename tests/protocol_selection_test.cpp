@@ -6,6 +6,7 @@
 #include "protocol_aa.h"
 
 using esphome::diesel_heater_ble::AAProtocolDriver;
+using esphome::diesel_heater_ble::CommandResult;
 using esphome::diesel_heater_ble::HeaterState;
 using esphome::diesel_heater_ble::ParseResult;
 using esphome::diesel_heater_ble::ProtocolSelection;
@@ -112,7 +113,9 @@ void test_configured_probe_and_bad_passkey_timeout_state() {
   assert(selection.probes_sent() == ProtocolSelection::kMaxDiscoveryProbes);
   assert(selection.timed_out());  // A wrong-but-valid physical passkey receives no response.
   assert(!selection.invalid_response_seen());
+  assert(selection.discovery_probe(4321).result() == CommandResult::NO_CHANGE);
   assert(!selection.discovery_probe(4321).sendable());
+  assert(selection.discovery_probe(0).result() == CommandResult::INVALID_VALUE);
 }
 
 void test_invalid_response_timeout_classification_resets_per_connection() {

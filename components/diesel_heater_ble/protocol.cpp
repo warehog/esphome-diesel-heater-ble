@@ -64,8 +64,8 @@ bool ProtocolSelection::parse(const std::vector<uint8_t> &raw, HeaterState &stat
 }
 
 CommandBatch ProtocolSelection::discovery_probe(uint16_t passkey) const {
-  if (!this->should_probe() || !AAProtocolDriver::valid_passkey(passkey))
-    return CommandBatch::with_result(CommandResult::INVALID_VALUE);
+  if (!AAProtocolDriver::valid_passkey(passkey)) return CommandBatch::with_result(CommandResult::INVALID_VALUE);
+  if (!this->should_probe()) return CommandBatch::with_result(CommandResult::NO_CHANGE);
   CommandBatch probe = CommandBatch::with_result(CommandResult::READY);
   probe.append(AAProtocolDriver::encode(passkey, AACommand::STATUS, 0));
   return probe;
