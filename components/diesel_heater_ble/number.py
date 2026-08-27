@@ -1,7 +1,7 @@
 import esphome.codegen as cg
 from esphome.components import number
 import esphome.config_validation as cv
-from esphome.const import DEVICE_CLASS_TEMPERATURE_DELTA, UNIT_CELSIUS
+from esphome.const import UNIT_CELSIUS
 
 from . import CONF_DIESEL_HEATER_BLE, DieselHeaterBLE, diesel_heater_ble_ns
 
@@ -25,7 +25,6 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_SET_TEMP): number.number_schema(SetTempNumber),
         cv.Optional(CONF_TEMPERATURE_OFFSET): number.number_schema(
             TemperatureOffsetNumber,
-            device_class=DEVICE_CLASS_TEMPERATURE_DELTA,
             unit_of_measurement=UNIT_CELSIUS,
         ),
     }
