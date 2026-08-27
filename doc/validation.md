@@ -704,3 +704,41 @@ evidence, and explicit-protocol compile-time driver exclusion remains
 unproven. Hardware reconnect, command ordering, timeout recovery, unavailable
 state, climate fallback, and clock checks remain unavailable because no
 compatible heater or BLE adapter was supplied.
+
+## T12 temperature-offset write (app-derived; hardware validation pending)
+
+This T12 execution adds exactly one capability: the optional
+`number.temperature_offset` control. It is admitted only after a valid
+MD2/MD4 response grants `EXTENDED_SETTINGS`; MD1/MD3 remain unsupported.
+The number has no optimistic publication path: it queues a tagged serialized
+delivery operation, and its state is published only from a later parsed heater
+response. A write failure, timeout, disconnect, unsupported variant, stale
+state, or invalid value leaves the confirmed state unchanged.
+
+The source is **app-derived** from the recorded AirHeaterBLE 1.20 APK and its
+raw `app-service.js` member (hashes above). The app's response parsing and
+capability evidence justify this component's encrypted MD2/MD4-only gate. Its
+parameter template separately renders `tempoffset` when `tempoffset != 255`,
+with an integer slider `min:-9,max:9`; plain-response parsing does not
+establish encrypted-only template visibility. `tempoffset_change` sends that
+integer as decimal command 20. The shared app encoder writes command data as
+signed 16-bit little-endian, so for example passkey 1234 / offset -9 is
+`AA 55 0C 22 14 F7 FF 38`.
+
+The normalized component state is Celsius: its existing encrypted parser
+reads raw signed offsets directly for reported Celsius and converts reported
+Fahrenheit offsets by 5/9. The new static ESPHome number is deliberately the
+unit-safe intersection `-5..5 °C`, integer step 1: direct Celsius values stay
+within the observed `-9..9` raw range, and Fahrenheit conversion/rounding also
+cannot exceed that range. This conservative static range is necessary because
+ESPHome number traits cannot safely change with the heater's reported unit;
+it does not claim that `-5..5 °C` is the app's full Celsius-mode UI range.
+
+The request tests are **synthetic** and assert command 20's exact signed
+little-endian bytes for Celsius and Fahrenheit normalization, plus invalid
+range/fraction rejection and MD1 unsupported rejection. The entity-policy
+test asserts `EXTENDED_SETTINGS` admission and the same conservative range.
+The full entity fixture includes the optional number; the minimal fixture does
+not load the number platform. No BLE capture, acknowledgement, or compatible
+heater was available for this capability, so it is neither capture-verified
+nor hardware-verified.

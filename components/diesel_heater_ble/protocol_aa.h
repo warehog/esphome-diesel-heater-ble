@@ -43,6 +43,7 @@ class AAProtocolDriver final : public ProtocolDriver {
   CommandBatch power(const HeaterState &state, uint16_t passkey, bool enabled) const override;
   CommandBatch manual_level(const HeaterState &state, uint16_t passkey, uint8_t level) const override;
   CommandBatch temperature_c(const HeaterState &state, uint16_t passkey, float temperature_c) const override;
+  CommandBatch temperature_offset_c(const HeaterState &state, uint16_t passkey, float temperature_offset_c) const override;
 
   static constexpr std::size_t minimum_safe_read_span(ProtocolVariant variant) {
     switch (variant) {

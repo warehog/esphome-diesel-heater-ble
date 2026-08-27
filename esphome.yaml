@@ -132,12 +132,16 @@ sensor:
   
 number:
   - platform: diesel_heater_ble
+    diesel_heater_ble: heater
     power_level:
       name: "Power Level"
       id: power_level
     set_temp:
       name: "Target Temperature"
       id: set_temp_number
+    temperature_offset:
+      name: "Temperature Offset"
+      id: temperature_offset_number
 
 switch:
   - platform: diesel_heater_ble

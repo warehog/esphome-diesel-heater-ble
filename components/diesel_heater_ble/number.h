@@ -26,6 +26,14 @@ class SetTempNumber : public number::Number, public Parented<DieselHeaterBLE> {
   void control(float value) override { this->parent_->on_temp_number(value); }
 };
 
+class TemperatureOffsetNumber : public number::Number, public Parented<DieselHeaterBLE> {
+ public:
+  TemperatureOffsetNumber() = default;
+
+ protected:
+  void control(float value) override { this->parent_->on_temperature_offset_number(value); }
+};
+
 }  // namespace diesel_heater_ble
 }  // namespace esphome
 

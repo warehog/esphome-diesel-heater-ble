@@ -33,6 +33,7 @@ enum class AvailabilityEntity : uint8_t {
   AUTOMATIC_HEATING,
   POWER_LEVEL_NUMBER,
   SET_TEMP_NUMBER,
+  TEMPERATURE_OFFSET_NUMBER,
   COUNT,
 };
 

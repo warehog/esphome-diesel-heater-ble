@@ -75,6 +75,7 @@ number:
     diesel_heater_ble: heater
     power_level: {name: Power Level}
     set_temp: {name: Target Temperature}
+    temperature_offset: {name: Temperature Offset}
 
 switch:
   - platform: diesel_heater_ble

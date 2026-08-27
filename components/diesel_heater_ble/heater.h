@@ -105,9 +105,14 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
 #if defined(USE_ESP32) && defined(USE_NUMBER)
   void set_power_level_number(number::Number *number) { power_level_number_ = number; availability_.register_entity(AvailabilityEntity::POWER_LEVEL_NUMBER); }
   void set_set_temp_number(number::Number *number) { set_temp_number_ = number; availability_.register_entity(AvailabilityEntity::SET_TEMP_NUMBER); }
+  void set_temperature_offset_number(number::Number *number) {
+    temperature_offset_number_ = number;
+    availability_.register_entity(AvailabilityEntity::TEMPERATURE_OFFSET_NUMBER);
+  }
 #endif
   EntityCommandResult on_power_level_number(float value, uint32_t transaction_id = 0);
   EntityCommandResult on_temp_number(float value, uint32_t transaction_id = 0);
+  EntityCommandResult on_temperature_offset_number(float value, uint32_t transaction_id = 0);
 
   // Switch setter
 #if defined(USE_ESP32) && defined(USE_SWITCH)
@@ -170,6 +175,7 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
   uint32_t last_rejection_log_{0};
   uint32_t last_lifecycle_log_{0};
   uint32_t last_delivery_log_{0};
+  static constexpr uint32_t kTemperatureOffsetDeliveryTag = 0xfffffffeU;
   CommandAdmission last_admission_rejection_{CommandAdmission::READY};
   CommandResult last_batch_rejection_{CommandResult::READY};
   DeliveryEnqueueResult last_delivery_enqueue_{DeliveryEnqueueResult::QUEUED};
@@ -217,6 +223,7 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
 #if defined(USE_ESP32) && defined(USE_NUMBER)
   number::Number *power_level_number_{};
   number::Number *set_temp_number_{};
+  number::Number *temperature_offset_number_{};
 #endif
 
 #if defined(USE_ESP32) && defined(USE_SWITCH)

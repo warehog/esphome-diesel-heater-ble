@@ -19,7 +19,8 @@ namespace {
 constexpr Capabilities kPower = capability_bits(Capability::POWER);
 constexpr Capabilities kManual = capability_bits(Capability::MODE) | Capability::MANUAL_LEVEL;
 constexpr Capabilities kTemperature = capability_bits(Capability::MODE) | Capability::SET_TEMPERATURE;
-constexpr Capabilities kAllEntityControls = kPower | kManual | kTemperature;
+constexpr Capabilities kTemperatureOffset = capability_bits(Capability::EXTENDED_SETTINGS);
+constexpr Capabilities kAllEntityControls = kPower | kManual | kTemperature | kTemperatureOffset;
 
 LifecycleSession ready_session(Capabilities capabilities = kAllEntityControls) {
   LifecycleSession session;
@@ -37,17 +38,24 @@ void test_each_entity_operation_is_normalized_and_admitted() {
   assert(EntityControlPolicy::admit(session, EntityOperation::MANUAL_LEVEL, 10.0f) == EntityCommandResult::QUEUED);
   assert(EntityControlPolicy::admit(session, EntityOperation::TEMPERATURE_C, 8.0f) == EntityCommandResult::QUEUED);
   assert(EntityControlPolicy::admit(session, EntityOperation::TEMPERATURE_C, 36.0f) == EntityCommandResult::QUEUED);
+  assert(EntityControlPolicy::admit(session, EntityOperation::TEMPERATURE_OFFSET_C, -5.0f) == EntityCommandResult::QUEUED);
+  assert(EntityControlPolicy::admit(session, EntityOperation::TEMPERATURE_OFFSET_C, 5.0f) == EntityCommandResult::QUEUED);
 
   assert(EntityControlPolicy::admit(session, EntityOperation::MANUAL_LEVEL, 0.0f) == EntityCommandResult::INVALID_VALUE);
   assert(EntityControlPolicy::admit(session, EntityOperation::MANUAL_LEVEL, 10.5f) == EntityCommandResult::INVALID_VALUE);
   assert(EntityControlPolicy::admit(session, EntityOperation::TEMPERATURE_C, 7.99f) == EntityCommandResult::INVALID_VALUE);
   assert(EntityControlPolicy::admit(session, EntityOperation::TEMPERATURE_C, 36.01f) == EntityCommandResult::INVALID_VALUE);
+  assert(EntityControlPolicy::admit(session, EntityOperation::TEMPERATURE_OFFSET_C, -5.01f) == EntityCommandResult::INVALID_VALUE);
+  assert(EntityControlPolicy::admit(session, EntityOperation::TEMPERATURE_OFFSET_C, 5.01f) == EntityCommandResult::INVALID_VALUE);
+  assert(EntityControlPolicy::admit(session, EntityOperation::TEMPERATURE_OFFSET_C, 0.5f) == EntityCommandResult::INVALID_VALUE);
 }
 
 void test_every_entity_operation_rejects_disconnected_stale_and_unsupported_state() {
   for (const EntityOperation operation : {EntityOperation::POWER, EntityOperation::MANUAL_LEVEL,
-                                          EntityOperation::TEMPERATURE_C}) {
-    const float value = operation == EntityOperation::MANUAL_LEVEL ? 5.0f : 20.0f;
+                                          EntityOperation::TEMPERATURE_C, EntityOperation::TEMPERATURE_OFFSET_C}) {
+    const float value = operation == EntityOperation::MANUAL_LEVEL ? 5.0f
+                        : operation == EntityOperation::TEMPERATURE_OFFSET_C ? 0.0f
+                                                                           : 20.0f;
     LifecycleSession disconnected;
     assert(EntityControlPolicy::admit(disconnected, operation, value) == EntityCommandResult::CONNECTION_UNAVAILABLE);
 
@@ -64,6 +72,8 @@ void test_every_entity_operation_rejects_disconnected_stale_and_unsupported_stat
   assert(EntityControlPolicy::admit(ready_session(kPower | kTemperature), EntityOperation::MANUAL_LEVEL, 5.0f) ==
          EntityCommandResult::CAPABILITY_UNAVAILABLE);
   assert(EntityControlPolicy::admit(ready_session(kPower | kManual), EntityOperation::TEMPERATURE_C, 20.0f) ==
+         EntityCommandResult::CAPABILITY_UNAVAILABLE);
+  assert(EntityControlPolicy::admit(ready_session(kPower | kManual), EntityOperation::TEMPERATURE_OFFSET_C, 0.0f) ==
          EntityCommandResult::CAPABILITY_UNAVAILABLE);
 }
 

@@ -15,6 +15,7 @@ enum class EntityOperation : uint8_t {
   POWER,
   MANUAL_LEVEL,
   TEMPERATURE_C,
+  TEMPERATURE_OFFSET_C,
 };
 
 // The delivery FIFO preserves the source of a control so a final asynchronous
@@ -57,6 +58,11 @@ class EntityControlPolicy {
  public:
   static constexpr float kMinTemperatureC = 8.0f;
   static constexpr float kMaxTemperatureC = 36.0f;
+  // The APK's raw parameter slider is integer -9..9 in the active reported
+  // temperature unit. A static ESPHome number cannot change its traits when
+  // the heater changes units, so this is the safe normalized-Celsius overlap.
+  static constexpr float kMinTemperatureOffsetC = -5.0f;
+  static constexpr float kMaxTemperatureOffsetC = 5.0f;
   static constexpr uint8_t kMinManualLevel = 1;
   static constexpr uint8_t kMaxManualLevel = 10;
 
@@ -68,6 +74,8 @@ class EntityControlPolicy {
         return capability_bits(Capability::MODE) | Capability::MANUAL_LEVEL;
       case EntityOperation::TEMPERATURE_C:
         return capability_bits(Capability::MODE) | Capability::SET_TEMPERATURE;
+      case EntityOperation::TEMPERATURE_OFFSET_C:
+        return capability_bits(Capability::EXTENDED_SETTINGS);
     }
     return capability_bits(Capability::NONE);
   }
@@ -91,6 +99,10 @@ class EntityControlPolicy {
   static bool valid_temperature_c(float temperature_c) {
     return std::isfinite(temperature_c) && temperature_c >= kMinTemperatureC && temperature_c <= kMaxTemperatureC;
   }
+  static bool valid_temperature_offset_c(float temperature_offset_c) {
+    return std::isfinite(temperature_offset_c) && temperature_offset_c >= kMinTemperatureOffsetC &&
+           temperature_offset_c <= kMaxTemperatureOffsetC && std::floor(temperature_offset_c) == temperature_offset_c;
+  }
   static bool valid(EntityOperation operation, float value) {
     switch (operation) {
       case EntityOperation::POWER:
@@ -99,6 +111,8 @@ class EntityControlPolicy {
         return valid_manual_level(value);
       case EntityOperation::TEMPERATURE_C:
         return valid_temperature_c(value);
+      case EntityOperation::TEMPERATURE_OFFSET_C:
+        return valid_temperature_offset_c(value);
     }
     return false;
   }

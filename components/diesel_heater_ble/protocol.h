@@ -25,6 +25,7 @@ class ProtocolDriver {
   virtual CommandBatch power(const HeaterState &state, uint16_t passkey, bool enabled) const = 0;
   virtual CommandBatch manual_level(const HeaterState &state, uint16_t passkey, uint8_t level) const = 0;
   virtual CommandBatch temperature_c(const HeaterState &state, uint16_t passkey, float temperature_c) const = 0;
+  virtual CommandBatch temperature_offset_c(const HeaterState &state, uint16_t passkey, float temperature_offset_c) const = 0;
 };
 
 // This registry is the sole response-driver selection path. It contains a

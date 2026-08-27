@@ -70,5 +70,31 @@ int main() {
   assert(mode_then_temperature.sendable() && mode_then_temperature.size() == 2);
   assert(mode_then_temperature.frame_at(0)->at(4) == 2 && mode_then_temperature.frame_at(0)->at(5) == 2);
   assert(mode_then_temperature.frame_at(1)->at(4) == 4 && mode_then_temperature.frame_at(1)->at(5) == 68);
+
+  state.operating_mode = {OperatingMode::THERMOSTAT, true};
+  state.reported_temperature_unit = {TemperatureUnit::CELSIUS, true};
+  state.temperature_offset_c = {0.0f, true};
+  const auto offset_celsius = driver->temperature_offset_c(state, 1234, -5.0f);
+  assert(offset_celsius.sendable() && offset_celsius.size() == 1);
+  assert((*offset_celsius.frame_at(0) == CommandFrame{{0xAA, 0x55, 0x0C, 0x22, 0x14, 0xFB, 0xFF, 0x3C}}));
+  state.reported_temperature_unit = {TemperatureUnit::FAHRENHEIT, true};
+  const auto offset_fahrenheit = driver->temperature_offset_c(state, 1234, -5.0f);
+  assert(offset_fahrenheit.sendable() && offset_fahrenheit.size() == 1);
+  assert((*offset_fahrenheit.frame_at(0) == CommandFrame{{0xAA, 0x55, 0x0C, 0x22, 0x14, 0xF7, 0xFF, 0x38}}));
+  const auto offset_fahrenheit_positive = driver->temperature_offset_c(state, 1234, 5.0f);
+  assert(offset_fahrenheit_positive.sendable() && offset_fahrenheit_positive.size() == 1);
+  assert((*offset_fahrenheit_positive.frame_at(0) == CommandFrame{{0xAA, 0x55, 0x0C, 0x22, 0x14, 0x09, 0x00, 0x4B}}));
+  assert(driver->temperature_offset_c(state, 1234, -5.1f).result() == CommandResult::INVALID_VALUE);
+  assert(driver->temperature_offset_c(state, 1234, 0.5f).result() == CommandResult::INVALID_VALUE);
+  HeaterState unavailable{};
+  assert(driver->temperature_offset_c(unavailable, 1234, 0.0f).result() == CommandResult::STATE_UNAVAILABLE);
+  state.temperature_offset_c = {-5.0f, true};
+  assert(driver->temperature_offset_c(state, 1234, -5.0f).result() == CommandResult::NO_CHANGE);
+  const auto *plain_driver = ProtocolRegistry::find(ProtocolVariant::MD1_AA55_PLAIN);
+  assert(plain_driver != nullptr);
+  assert(plain_driver->temperature_offset_c(state, 1234, 0.0f).result() == CommandResult::UNSUPPORTED);
+  const auto *md4_driver = ProtocolRegistry::find(ProtocolVariant::MD4_AA66_ENCRYPTED);
+  assert(md4_driver != nullptr);
+  assert(md4_driver->temperature_offset_c(state, 1234, 0.0f).sendable());
   return 0;
 }

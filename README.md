@@ -36,6 +36,9 @@ from 1 through 9999 (default `1234`). `auto` activates only after a complete
 matching response parses successfully; explicit modes reject other responses.
 `time_id` is optional and accepts any ESPHome `RealTimeClock`; when present,
 the heater clock is synchronized through the normal acknowledged command path.
+For app-derived encrypted MD2/MD4 responses, the optional
+`number.temperature_offset` control exposes a conservative normalized
+`-5..5 °C` range; it is not hardware-verified.
 
 The four response formats and the shared request envelope are **app-derived**
 from AirHeaterBLE 1.20 and exercised with **synthetic** host tests. No raw BLE

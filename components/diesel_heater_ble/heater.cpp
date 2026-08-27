@@ -348,6 +348,14 @@ bool DieselHeaterBLE::state_matches_current_command_(const HeaterState &state) c
         return std::fabs(state.target_temperature_c.value - expected_c) < 0.01f;
       }
       return false;
+    case AACommand::TEMPERATURE_OFFSET: {
+      if (!state.temperature_offset_c.valid || !state.reported_temperature_unit.valid) return false;
+      const int16_t raw_offset = static_cast<int16_t>(wire_value);
+      float expected_c = static_cast<float>(raw_offset);
+      if (state.reported_temperature_unit.value == TemperatureUnit::FAHRENHEIT)
+        expected_c *= 5.0f / 9.0f;
+      return std::fabs(state.temperature_offset_c.value - expected_c) < 0.01f;
+    }
     default:
       return false;
   }
@@ -459,6 +467,7 @@ void DieselHeaterBLE::publish_unavailable_entities_(AvailabilityMask entities) {
   };
   unavailable(AvailabilityEntity::POWER_LEVEL_NUMBER, this->power_level_number_, unavailable_number);
   unavailable(AvailabilityEntity::SET_TEMP_NUMBER, this->set_temp_number_, unavailable_number);
+  unavailable(AvailabilityEntity::TEMPERATURE_OFFSET_NUMBER, this->temperature_offset_number_, unavailable_number);
 #endif
 }
 
@@ -510,6 +519,7 @@ void DieselHeaterBLE::update_sensors(const HeaterState &new_state) {
 #if defined(USE_ESP32) && defined(USE_NUMBER)
   publish_number_field(this->power_level_number_, new_state.manual_level);
   publish_number_field(this->set_temp_number_, new_state.target_temperature_c);
+  publish_number_field(this->temperature_offset_number_, new_state.temperature_offset_c);
 #endif
 
 #if defined(USE_ESP32) && defined(USE_SWITCH)
@@ -540,6 +550,18 @@ EntityCommandResult DieselHeaterBLE::on_temp_number(float value, uint32_t transa
   }
   const CommandBatch batch = driver->temperature_c(this->state_, this->passkey_, value);
   return this->dispatch_command_(admission, &batch, transaction_id);
+}
+
+EntityCommandResult DieselHeaterBLE::on_temperature_offset_number(float value, uint32_t transaction_id) {
+  const ProtocolDriver *driver = this->selection_.driver();
+  const EntityCommandResult admission = this->admit_command_(EntityOperation::TEMPERATURE_OFFSET_C, value);
+  if (admission != EntityCommandResult::QUEUED) return this->dispatch_command_(admission, nullptr);
+  const CommandBatch batch = driver->temperature_offset_c(this->state_, this->passkey_, value);
+  // A fixed non-zero tag keeps this standalone entity operation visible to
+  // the serialized delivery path. Its number state still changes only when a
+  // later parsed heater response is published.
+  const uint32_t tag = transaction_id == 0 ? kTemperatureOffsetDeliveryTag : transaction_id;
+  return this->dispatch_command_(admission, &batch, tag);
 }
 
 EntityCommandResult DieselHeaterBLE::on_power_switch(bool state, uint32_t transaction_id) {

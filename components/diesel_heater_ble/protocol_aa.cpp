@@ -217,5 +217,29 @@ CommandBatch AAProtocolDriver::temperature_c(const HeaterState &state, uint16_t 
   return mode_then_value_(state, passkey, OperatingMode::THERMOSTAT, AACommand::VALUE, wire_temperature, matches);
 }
 
+CommandBatch AAProtocolDriver::temperature_offset_c(const HeaterState &state, uint16_t passkey,
+                                                     float temperature_offset_c) const {
+  // App-derived parameter UI: the raw control is an integer slider from -9
+  // through 9. The entity policy supplies the smaller, unit-safe normalized
+  // Celsius interval; retain this boundary check for non-entity callers.
+  if (!has_capability(this->capabilities(), Capability::EXTENDED_SETTINGS))
+    return CommandBatch::with_result(CommandResult::UNSUPPORTED);
+  if (!state.valid || !state.reported_temperature_unit.valid)
+    return CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE);
+  if (!std::isfinite(temperature_offset_c) || temperature_offset_c < -5.0f || temperature_offset_c > 5.0f ||
+      std::floor(temperature_offset_c) != temperature_offset_c)
+    return CommandBatch::with_result(CommandResult::INVALID_VALUE);
+
+  int16_t wire_offset = static_cast<int16_t>(temperature_offset_c);
+  if (state.reported_temperature_unit.value == TemperatureUnit::FAHRENHEIT)
+    wire_offset = static_cast<int16_t>(std::lround(temperature_offset_c * 9.0f / 5.0f));
+  if (wire_offset < -9 || wire_offset > 9) return CommandBatch::with_result(CommandResult::INVALID_VALUE);
+
+  const bool matches = state.temperature_offset_c.valid &&
+                       std::fabs(state.temperature_offset_c.value - temperature_offset_c) < 0.01f;
+  if (matches) return CommandBatch::with_result(CommandResult::NO_CHANGE);
+  return command_(passkey, AACommand::TEMPERATURE_OFFSET, wire_offset);
+}
+
 }  // namespace diesel_heater_ble
 }  // namespace esphome
