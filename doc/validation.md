@@ -632,3 +632,46 @@ current source uses a static four-entry `AAProtocolDriver` registry and runtime
 any driver code is excluded.
 No hardware or BLE adapter was available, so hardware validation remains
 pending.
+
+## T10 optional heater-clock synchronization (code complete, hardware validation pending)
+
+The dependency-free `clock_sync_test` covers invalid time, all 16-bit
+minutes-since-midnight boundaries, acknowledgement-only success, reconnect,
+and serialization with the normal status-command path. It also verifies that a
+failed periodic attempt at its one-hour due time cannot enqueue again before
+the 60-second retry interval, retries exactly at that interval, and returns to
+the one-hour schedule after the retry succeeds. This preserves unsigned
+wrap-safe elapsed-time arithmetic and prevents periodic delivery failures from
+enqueuing once per loop.
+
+On 2026-08-27, ESPHome 2026.8.1 / ESP-IDF 5.5.5 validation completed with:
+
+```sh
+cmake -S tests -B /tmp/diesel-heater-host-tests
+cmake --build /tmp/diesel-heater-host-tests --parallel
+ctest --test-dir /tmp/diesel-heater-host-tests --output-on-failure
+cmake -S tests -B /tmp/diesel-heater-host-asan -DENABLE_SANITIZERS=ON
+cmake --build /tmp/diesel-heater-host-asan --parallel
+ASAN_OPTIONS=detect_leaks=1 ctest --test-dir /tmp/diesel-heater-host-asan --output-on-failure
+.venv/bin/esphome config tests/esphome-local.yaml
+.venv/bin/esphome config tests/esphome-minimal.yaml
+.venv/bin/esphome config tests/esphome-local-time.yaml
+.venv/bin/esphome config tests/esphome-minimal-time.yaml
+.venv/bin/esphome compile tests/esphome-local.yaml
+.venv/bin/esphome compile tests/esphome-minimal.yaml
+.venv/bin/esphome compile tests/esphome-local-time.yaml
+.venv/bin/esphome compile tests/esphome-minimal-time.yaml
+```
+
+Both host suites passed 11/11, with no ASan/UBSan findings. The full and
+BLE-only fixtures compile both without `time_id` and with the generic SNTP
+`RealTimeClock` fixture. The checked firmware output sizes are 668,320 bytes
+(full without time), 652,544 bytes (minimal without time), 1,103,248 bytes
+(full with time), and 1,087,344 bytes (minimal with time); the time-enabled
+images retain 731,760 and 747,664 bytes, respectively, in the 1,835,008-byte
+application partition. Schema-negative fixtures for an unknown `time_id` and
+a non-clock `time_id` both correctly fail validation.
+
+No compatible heater or BLE adapter was available, so on-device clock setting,
+acknowledgement behavior, and reconnect behavior remain hardware-validation
+pending.

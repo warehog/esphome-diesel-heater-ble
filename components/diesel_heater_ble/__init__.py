@@ -1,5 +1,5 @@
 import esphome.codegen as cg
-from esphome.components import ble_client
+from esphome.components import ble_client, time
 import esphome.config_validation as cv
 from esphome.const import CONF_ID
 
@@ -9,6 +9,7 @@ DEPENDENCIES = ["ble_client"]
 CONF_DIESEL_HEATER_BLE = "diesel_heater_ble"
 CONF_PROTOCOL = "protocol"
 CONF_PASSKEY = "passkey"
+CONF_TIME_ID = "time_id"
 
 diesel_heater_ble_ns = cg.esphome_ns.namespace("diesel_heater_ble")
 DieselHeaterBLE = diesel_heater_ble_ns.class_(
@@ -29,6 +30,7 @@ CONFIG_SCHEMA = (
         cv.GenerateID(): cv.declare_id(DieselHeaterBLE),
         cv.Optional(CONF_PROTOCOL, default="auto"): cv.enum(PROTOCOL_VARIANTS, lower=True),
         cv.Optional(CONF_PASSKEY, default=1234): cv.int_range(min=1, max=9999),
+        cv.Optional(CONF_TIME_ID): cv.use_id(time.RealTimeClock),
     })
     .extend(cv.COMPONENT_SCHEMA)
     .extend(ble_client.BLE_CLIENT_SCHEMA)
@@ -39,5 +41,8 @@ async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     cg.add(var.set_protocol(config[CONF_PROTOCOL]))
     cg.add(var.set_passkey(config[CONF_PASSKEY]))
+    if CONF_TIME_ID in config:
+        clock = await cg.get_variable(config[CONF_TIME_ID])
+        cg.add(var.set_time(clock))
     await cg.register_component(var, config)
     await ble_client.register_ble_node(var, config)

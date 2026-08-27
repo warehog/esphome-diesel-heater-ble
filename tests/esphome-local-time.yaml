@@ -1,0 +1,100 @@
+esphome:
+  name: diesel-heater-local-time-test
+  build_path: /tmp/diesel-heater-esphome-local-time
+
+esp32:
+  board: lolin32_lite
+  variant: esp32
+  framework:
+    type: esp-idf
+
+logger:
+
+wifi:
+  ssid: "test-network"
+  password: "test-password"
+
+time:
+  - platform: sntp
+    id: heater_clock
+    servers: [time.example.invalid]
+
+external_components:
+  - source:
+      type: local
+      path: ../components
+    components: [diesel_heater_ble]
+
+esp32_ble_tracker:
+
+ble_client:
+  id: heater_ble_client
+  mac_address: "02:00:00:00:00:01"
+
+diesel_heater_ble:
+  id: heater
+  ble_client_id: heater_ble_client
+  protocol: auto
+  passkey: 1234
+  time_id: heater_clock
+
+climate:
+  - platform: diesel_heater_ble
+    name: Climate
+    id: heater_climate
+    diesel_heater_ble: heater
+    external_temperature_timeout: 90min
+    external_temperature_timeout_heating: 12min
+    external_temperature_fahrenheit: true
+    external_stage_gain: 1.5
+    external_off_error: -0.75
+    external_auto_on_error: 0.75
+    external_min_on_time: 8min
+    external_min_off_time: 18min
+    external_overshoot_hold: 2min
+    external_level_update_interval: 15s
+
+sensor:
+  - platform: diesel_heater_ble
+    diesel_heater_ble: heater
+    running_state: {name: Running State}
+    error_code: {name: Error Code}
+    running_step: {name: Running Step}
+    altitude: {name: Altitude}
+    running_mode: {name: Running Mode}
+    set_level: {name: Set Level}
+    set_temp: {name: Set Temperature}
+    supply_voltage: {name: Supply Voltage}
+    case_temp: {name: Case Temperature}
+    cab_temp: {name: Cabin Temperature}
+    start_time: {name: Start Time}
+    auto_time: {name: Auto Time}
+    run_time: {name: Run Time}
+    is_auto: {name: Is Auto}
+    language: {name: Language}
+    temp_offset: {name: Temperature Offset}
+    tank_volume: {name: Tank Volume}
+    oil_pump_type: {name: Oil Pump Type}
+    rf433_on_off: {name: RF433 On Off}
+    temp_unit: {name: Temperature Unit}
+    altitude_unit: {name: Altitude Unit}
+    automatic_heating: {name: Automatic Heating}
+
+number:
+  - platform: diesel_heater_ble
+    diesel_heater_ble: heater
+    power_level: {name: Power Level}
+    set_temp: {name: Target Temperature}
+
+switch:
+  - platform: diesel_heater_ble
+    diesel_heater_ble: heater
+    power: {name: Power}
+
+button:
+  - platform: diesel_heater_ble
+    diesel_heater_ble: heater
+    level_up: {name: Level Up}
+    level_down: {name: Level Down}
+    temp_up: {name: Temperature Up}
+    temp_down: {name: Temperature Down}

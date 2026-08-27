@@ -180,6 +180,10 @@ CommandBatch AAProtocolDriver::command_(uint16_t passkey, AACommand command, int
   return batch;
 }
 CommandBatch AAProtocolDriver::status(uint16_t passkey) const { return command_(passkey, AACommand::STATUS, 0); }
+CommandBatch AAProtocolDriver::clock(uint16_t passkey, uint16_t minutes_since_midnight) const {
+  if (minutes_since_midnight >= 24U * 60U) return CommandBatch::with_result(CommandResult::INVALID_VALUE);
+  return command_(passkey, AACommand::CLOCK, static_cast<int16_t>(minutes_since_midnight));
+}
 CommandBatch AAProtocolDriver::power(const HeaterState &state, uint16_t passkey, bool enabled) const {
   if (!state.valid || !state.power.valid) return CommandBatch::with_result(CommandResult::STATE_UNAVAILABLE);
   if (state.power.value == enabled) return CommandBatch::with_result(CommandResult::NO_CHANGE);

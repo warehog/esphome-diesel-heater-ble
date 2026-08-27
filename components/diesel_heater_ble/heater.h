@@ -18,6 +18,10 @@
 #include "lifecycle.h"
 #include "state.h"
 
+#if defined(USE_ESP32) && defined(USE_TIME)
+#include "clock_sync.h"
+#endif
+
 namespace esphome {
 namespace button {
 class Button;
@@ -28,6 +32,11 @@ class Number;
 namespace sensor {
 class Sensor;
 }
+#if defined(USE_ESP32) && defined(USE_TIME)
+namespace time {
+class RealTimeClock;
+}
+#endif
 namespace switch_ {
 class Switch;
 }
@@ -121,11 +130,17 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
   HeaterState get_state() { return this->state_; }
   void set_protocol(ProtocolVariant protocol) { this->selection_.set_configured(protocol); }
   void set_passkey(uint16_t passkey) { this->passkey_ = passkey; }
+#if defined(USE_ESP32) && defined(USE_TIME)
+  void set_time(time::RealTimeClock *time) { this->time_ = time; }
+#endif
 
  protected:
   EntityCommandResult admit_command_(EntityOperation operation, float value = 0.0f);
   EntityCommandResult dispatch_command_(EntityCommandResult admission, const CommandBatch *batch, uint32_t transaction_id = 0);
   void dispatch_delivery_events_();
+#if defined(USE_ESP32) && defined(USE_TIME)
+  void try_clock_sync_(uint32_t now);
+#endif
   bool state_matches_current_command_(const HeaterState &state) const;
   void clear_connection_state_();
   void publish_unavailable_entities_(AvailabilityMask entities);
@@ -159,6 +174,12 @@ class DieselHeaterBLE : public Component, public ble_client::BLEClientNode {
   CommandResult last_batch_rejection_{CommandResult::READY};
   DeliveryEnqueueResult last_delivery_enqueue_{DeliveryEnqueueResult::QUEUED};
   DeliveryFailure last_delivery_failure_{DeliveryFailure::NONE};
+
+#if defined(USE_ESP32) && defined(USE_TIME)
+  static constexpr uint32_t kClockSyncDeliveryTag = 0xffffffffU;
+  ClockSyncRuntime clock_sync_{};
+  time::RealTimeClock *time_{nullptr};
+#endif
 
   // Optional platform fields are compiled only with their owning platform.
 #if defined(USE_ESP32) && defined(USE_SENSOR)

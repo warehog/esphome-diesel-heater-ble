@@ -67,6 +67,13 @@ target_compile_options(command_delivery_test PRIVATE -Wall -Wextra -Wpedantic)
 
 add_test(NAME command_delivery_test COMMAND command_delivery_test)
 
+add_executable(clock_sync_test clock_sync_test.cpp)
+target_compile_features(clock_sync_test PRIVATE cxx_std_17)
+target_link_libraries(clock_sync_test PRIVATE diesel_heater_protocol)
+target_compile_options(clock_sync_test PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME clock_sync_test COMMAND clock_sync_test)
+
 add_executable(entity_control_test entity_control_test.cpp)
 target_compile_features(entity_control_test PRIVATE cxx_std_17)
 target_link_libraries(entity_control_test PRIVATE diesel_heater_protocol)

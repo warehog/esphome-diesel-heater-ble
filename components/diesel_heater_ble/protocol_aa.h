@@ -39,6 +39,7 @@ class AAProtocolDriver final : public ProtocolDriver {
   ParseResult parse(const std::vector<uint8_t> &raw, HeaterState &state) const override;
 
   CommandBatch status(uint16_t passkey) const override;
+  CommandBatch clock(uint16_t passkey, uint16_t minutes_since_midnight) const override;
   CommandBatch power(const HeaterState &state, uint16_t passkey, bool enabled) const override;
   CommandBatch manual_level(const HeaterState &state, uint16_t passkey, uint8_t level) const override;
   CommandBatch temperature_c(const HeaterState &state, uint16_t passkey, float temperature_c) const override;

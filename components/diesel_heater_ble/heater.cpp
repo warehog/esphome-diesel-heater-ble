@@ -16,6 +16,10 @@
 #include "esphome/components/switch/switch.h"
 #endif
 
+#if defined(USE_ESP32) && defined(USE_TIME)
+#include "esphome/components/time/real_time_clock.h"
+#endif
+
 #include <cmath>
 
 #ifdef USE_ESP32
@@ -103,6 +107,9 @@ void DieselHeaterBLE::loop() {
   });
   this->dispatch_delivery_events_();
   this->log_delivery_failure_();
+#if defined(USE_ESP32) && defined(USE_TIME)
+  this->try_clock_sync_(now);
+#endif
   if (this->lifecycle_.connected()) {
     if (now - this->last_request_ >= 1000) {
       const ProtocolDriver *driver = this->selection_.driver();
@@ -279,13 +286,42 @@ EntityCommandResult DieselHeaterBLE::dispatch_command_(EntityCommandResult admis
 }
 
 void DieselHeaterBLE::dispatch_delivery_events_() {
-#if defined(USE_ESP32) && defined(USE_CLIMATE)
   DeliveryEvent event;
   while (this->delivery_.consume_event(event)) {
-    if (this->climate_ != nullptr) this->climate_->on_control_delivery(event.tag, event.success);
-  }
+#if defined(USE_ESP32) && defined(USE_TIME)
+    if (event.tag == kClockSyncDeliveryTag) {
+      this->clock_sync_.delivery_completed(millis(), event.success);
+      continue;
+    }
 #endif
+#if defined(USE_ESP32) && defined(USE_CLIMATE)
+    if (this->climate_ != nullptr) this->climate_->on_control_delivery(event.tag, event.success);
+#endif
+  }
 }
+
+#if defined(USE_ESP32) && defined(USE_TIME)
+void DieselHeaterBLE::try_clock_sync_(uint32_t now) {
+  if (this->time_ == nullptr) return;
+  const auto current_time = this->time_->now();
+  ClockTime clock_time{current_time.is_valid(), current_time.hour, current_time.minute};
+  uint16_t minutes_since_midnight = 0;
+  if (!ClockSyncRuntime::minutes_since_midnight(clock_time, minutes_since_midnight)) return;
+
+  const ProtocolDriver *driver = this->selection_.driver();
+  const bool ready = this->lifecycle_.can_publish_state() && this->state_.valid && driver != nullptr;
+  const bool delivery_idle = this->delivery_.empty() && this->delivery_.phase() == DeliveryPhase::IDLE;
+  if (!this->clock_sync_.should_enqueue(now, ready, delivery_idle, clock_time)) return;
+
+  const CommandBatch batch = driver->clock(this->passkey_, minutes_since_midnight);
+  const DeliveryEnqueueResult result = this->delivery_.enqueue_control(batch, kClockSyncDeliveryTag);
+  if (result == DeliveryEnqueueResult::QUEUED) {
+    this->clock_sync_.queued(now);
+  } else {
+    this->log_delivery_enqueue_(result);
+  }
+}
+#endif
 
 bool DieselHeaterBLE::state_matches_current_command_(const HeaterState &state) const {
   const CommandFrame *frame = this->delivery_.current_frame();
@@ -361,6 +397,9 @@ void DieselHeaterBLE::log_lifecycle_(const char *message) {
 
 void DieselHeaterBLE::clear_connection_state_() {
   this->delivery_.disconnect();
+#if defined(USE_ESP32) && defined(USE_TIME)
+  this->clock_sync_.reset_connection();
+#endif
   this->lifecycle_.disconnect();
   const AvailabilityMask unavailable_entities = this->availability_.disconnect();
   this->handle_ = 0;

@@ -21,6 +21,7 @@ class ProtocolDriver {
   virtual ParseResult parse(const std::vector<uint8_t> &raw, HeaterState &state) const = 0;
 
   virtual CommandBatch status(uint16_t passkey) const = 0;
+  virtual CommandBatch clock(uint16_t passkey, uint16_t minutes_since_midnight) const = 0;
   virtual CommandBatch power(const HeaterState &state, uint16_t passkey, bool enabled) const = 0;
   virtual CommandBatch manual_level(const HeaterState &state, uint16_t passkey, uint8_t level) const = 0;
   virtual CommandBatch temperature_c(const HeaterState &state, uint16_t passkey, float temperature_c) const = 0;
