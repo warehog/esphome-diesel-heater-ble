@@ -675,3 +675,32 @@ a non-clock `time_id` both correctly fail validation.
 No compatible heater or BLE adapter was available, so on-device clock setting,
 acknowledgement behavior, and reconnect behavior remain hardware-validation
 pending.
+
+## T11 final qualification (matrix pass reported by user; hardware validation pending)
+
+The final source audit found no live legacy parser/controller symbols
+(`ResponseParser`, `Request`, `HeaterController`, `ControllerSelector`,
+`messages.h`, or `controllers.h`), no dynamic protocol-driver/controller
+allocation, and no AA header/checksum/raw-mode knowledge in entity sources.
+The only AA constants are in the protocol implementation and its protocol
+tests. The remaining `HeaterState` alias and legacy UI heating label are
+intentional compatibility/diagnostic names, not live migration adapters.
+
+On 2026-08-27 the user ran the complete checked-in matrix successfully after
+freeing disk space under `/tmp`:
+
+- full and BLE-only minimal fixtures;
+- `auto`, `aa55_plain`, `aa55_encrypted`, `aa66_plain`, and
+  `aa66_encrypted` selection;
+- each selection both without `time_id` and with the generic SNTP
+  `RealTimeClock` fixture.
+
+The 16 explicit-selection fixtures are under `tests/esphome-matrix-*.yaml`;
+the four auto-selection cells are `tests/esphome-{local,minimal}{,-time}.yaml`.
+This records a user-verified compile pass, not fabricated compiler output:
+per-cell warning/size logs from that terminal session were not captured. The
+reproducible T09 and T10 size measurements above remain the byte-level
+evidence, and explicit-protocol compile-time driver exclusion remains
+unproven. Hardware reconnect, command ordering, timeout recovery, unavailable
+state, climate fallback, and clock checks remain unavailable because no
+compatible heater or BLE adapter was supplied.

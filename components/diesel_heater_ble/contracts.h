@@ -8,8 +8,7 @@
 namespace esphome {
 namespace diesel_heater_ble {
 
-// Stable identifiers for the four AA-family response formats. These names do
-// not select or enable a runtime parser; T04 performs that migration.
+// Stable identifiers for the four AA-family response formats.
 enum class ProtocolVariant : uint8_t {
   UNKNOWN = 0,
   MD1_AA55_PLAIN,
@@ -85,14 +84,14 @@ constexpr Capabilities capabilities_for(ProtocolVariant variant) {
 }
 
 // The app-derived state rule maps raw running states 0 and 3 to off and every
-// other raw state to on. T03 retains the raw byte as a diagnostic even though
-// this normalized Boolean is sufficient for power control.
+// other raw state to on. The raw byte remains a diagnostic alongside this
+// normalized Boolean.
 constexpr bool power_from_raw_running_state(uint8_t raw_running_state) {
   return raw_running_state != 0 && raw_running_state != 3;
 }
 
-// This preserves only the pre-T03 climate UI behavior: it displayed HEATING
-// for raw running-step values 2 and 3. It is not app-derived evidence, a
+// This preserves the climate UI behavior of displaying HEATING for raw
+// running-step values 2 and 3. It is not app-derived evidence, a
 // protocol semantic, or a universal heater-state meaning.
 constexpr bool legacy_ui_heating_from_raw_running_step(uint8_t raw_running_step) {
   return raw_running_step == 2 || raw_running_step == 3;

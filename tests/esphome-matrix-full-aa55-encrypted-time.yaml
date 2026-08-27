@@ -1,0 +1,7 @@
+substitutions:
+  test_name: dh-full-aa55-encrypted-time
+  build_path: /tmp/diesel-heater-esphome-full-aa55-encrypted-time
+  protocol: aa55_encrypted
+packages:
+  fixture: !include fixtures/matrix/full.yaml
+  clock: !include fixtures/matrix/time.yaml

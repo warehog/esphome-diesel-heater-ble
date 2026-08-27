@@ -1,0 +1,7 @@
+substitutions:
+  test_name: dh-min-aa66-encrypted-time
+  build_path: /tmp/diesel-heater-esphome-minimal-aa66-encrypted-time
+  protocol: aa66_encrypted
+packages:
+  fixture: !include fixtures/matrix/minimal.yaml
+  clock: !include fixtures/matrix/time.yaml

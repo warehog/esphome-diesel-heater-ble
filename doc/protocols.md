@@ -13,9 +13,9 @@ This document describes the four message formats (protocols) used by the diesel 
 
 ### Documented completeness policy and evidence limit
 
-The repository README documents 20-byte plain responses and 48-byte encrypted
-responses. The legacy single-notification parser uses those as its
-**docs/app-derived completeness policy**: a recognized plain response below 20
+The project documentation and app extract describe 20-byte plain responses and
+48-byte encrypted responses. The component uses those as its **docs/app-derived
+completeness policy**: a recognized plain response below 20
 bytes, or encrypted response below 48 bytes, is incomplete and never changes
 published state. This is deliberately a conservative policy, not a claim that
 captures prove those exact wire lengths or notification boundaries.
@@ -32,6 +32,23 @@ Neither the completeness policy nor these spans are capture proof. The parser
 does not invent checksum, terminator, or framing validation absent from the
 APK/docs evidence. Real capture or hardware validation remains required before
 making a wire-level compatibility claim.
+
+### Supported request family and verification status
+
+The component uses one eight-byte AA request envelope for all four response
+formats: `AA 55 key_hi key_lo command value_lo value_hi checksum`. `key_hi`
+and `key_lo` are the configured decimal passkey split into base-100 groups;
+the checksum is the low byte of the sum of bytes 2 through 6. This behavior is
+**app-derived** from AirHeaterBLE 1.20 and covered by **synthetic** host tests.
+It has not been verified against a compatible heater or raw BLE capture.
+
+`protocol: auto` waits for a complete successful response before selecting a
+format. The explicit values are `aa55_plain`, `aa55_encrypted`,
+`aa66_plain`, and `aa66_encrypted`; an explicit selection rejects another
+format for the connection. Core status, power, mode, level, temperature, and
+clock commands are app-derived for all four formats. The app exposes its
+extended settings only for the encrypted formats; that is not proof that a
+plain-format heater rejects those commands.
 
 ---
 

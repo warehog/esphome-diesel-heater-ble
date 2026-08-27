@@ -35,6 +35,9 @@ diesel_heater_ble:
   ble_client_id: ble_client_id
   protocol: auto
   passkey: 1234
+  # Optional: set `time_id` to any configured ESPHome RealTimeClock.
+  # Clock synchronization is disabled when this key is omitted.
+  # time_id: heater_clock
 
 climate:
   - platform: diesel_heater_ble

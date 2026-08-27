@@ -34,6 +34,15 @@ The component accepts `protocol: auto` (default), `aa55_plain`,
 `aa55_encrypted`, `aa66_plain`, or `aa66_encrypted`, and a decimal `passkey`
 from 1 through 9999 (default `1234`). `auto` activates only after a complete
 matching response parses successfully; explicit modes reject other responses.
+`time_id` is optional and accepts any ESPHome `RealTimeClock`; when present,
+the heater clock is synchronized through the normal acknowledged command path.
+
+The four response formats and the shared request envelope are **app-derived**
+from AirHeaterBLE 1.20 and exercised with **synthetic** host tests. No raw BLE
+capture or compatible heater was available for this release, so no format,
+command, clock, reconnect, or Home Assistant publication behavior is claimed
+as hardware-verified. See [protocol evidence and limits](doc/protocols.md) and
+[validation results](doc/validation.md).
 
 
 
@@ -351,18 +360,25 @@ Protocols are identified by the first two bytes of the response:
 - **0xAA 0x66 (encrypted):**  
   Another newer version with a 48-byte encrypted data frame and an altered byte order.
 
-Each protocol employs slightly different formats for requests and responses. For incoming data (requests from the mobile app), the controller expects "plain text," whereas responses are encrypted only in the most recent protocol versions.
+Each response format has its own field layout. The app-derived request envelope
+is shared across the AA family; encrypted formats encrypt responses, not these
+requests.
 
 ### IMPORTANT: Current Implementation
-This code parses responses for all protocol versions but currently sends commands only using the **0xAA 0x55 (encrypted)** protocol. I own a heater that uses this third protocol version, so it is fully implemented in this PR. For the other protocols, I welcome assistance from owners of devices using those versions.
+The component has one static AA-family driver registry and supports automatic
+or explicit selection of all four documented response formats. It sends the
+app-derived core request family only after a complete successful response has
+selected the configured format. This is code and synthetic-test support, not
+hardware verification; please contribute sanitized captures or device results
+to strengthen the evidence.
 
 ## Framework Selection
 The BLE stack occupies a significant amount of flash memory. Combined with several sensors, buttons, and other components, this quickly exceeded the 4MB flash capacity of my ESP32 Lolin Lite. I found that the ESP-IDF framework produces a smaller binary compared to the Arduino framework. Therefore, unless you have an 8MB board, ESP-IDF is the only viable option.
 
 ## Future Work / TODO
 
-- **Support for Additional Controllers:**  
-  Implement `HeaterController_*` classes for other controller types.
-  
-- **Code Refactoring:**  
-  Allow configuration without buttons, switches, or numbers. Currently, if none of these are defined in the YAML, the C++ compiler complains about missing header files (e.g., `esphome/components/button/button.h`).
+- **Evidence-backed expansion:** Add one capability or response format only
+  with explicit app, capture, or hardware provenance; do not promote
+  app-derived behavior to hardware support without a device result.
+- **Additional controllers:** Document and implement non-AA controller
+  families only when protocol evidence is available.

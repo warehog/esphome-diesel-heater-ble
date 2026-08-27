@@ -1,0 +1,6 @@
+substitutions:
+  test_name: dh-full-aa66-encrypted
+  build_path: /tmp/diesel-heater-esphome-full-aa66-encrypted
+  protocol: aa66_encrypted
+packages:
+  fixture: !include fixtures/matrix/full.yaml

@@ -1,0 +1,7 @@
+substitutions:
+  test_name: dh-full-aa55-plain-time
+  build_path: /tmp/diesel-heater-esphome-full-aa55-plain-time
+  protocol: aa55_plain
+packages:
+  fixture: !include fixtures/matrix/full.yaml
+  clock: !include fixtures/matrix/time.yaml
