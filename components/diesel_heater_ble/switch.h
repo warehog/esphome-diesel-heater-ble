@@ -1,9 +1,10 @@
 #pragma once
 
+#if defined(USE_ESP32) && defined(USE_SWITCH)
+
 #include "esphome/components/switch/switch.h"
 #include "esphome/core/log.h"
 #include "heater.h"
-#include "messages.h"
 
 namespace esphome {
 namespace diesel_heater_ble {
@@ -18,3 +19,5 @@ class PowerSwitch : public switch_::Switch, public Parented<DieselHeaterBLE> {
 
 }  // namespace diesel_heater_ble
 }  // namespace esphome
+
+#endif  // USE_ESP32 && USE_SWITCH

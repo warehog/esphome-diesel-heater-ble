@@ -1,0 +1,11 @@
+wifi:
+  ssid: "test-network"
+  password: "test-password"
+
+time:
+  - platform: sntp
+    id: heater_clock
+    servers: [time.example.invalid]
+
+diesel_heater_ble:
+  time_id: heater_clock

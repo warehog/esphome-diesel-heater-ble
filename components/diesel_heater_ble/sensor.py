@@ -9,7 +9,6 @@ from esphome.const import (
     UNIT_CELSIUS,
     UNIT_EMPTY,
     UNIT_METER,
-    UNIT_SECOND,
     UNIT_VOLT,
 )
 
@@ -65,7 +64,7 @@ CONFIG_SCHEMA = cv.Schema(
         ),
         cv.Optional(CONF_ALTITUDE): sensor.sensor_schema(
             unit_of_measurement=UNIT_METER,
-            accuracy_decimals=0,
+            accuracy_decimals=3,
             device_class=DEVICE_CLASS_EMPTY,
             state_class=STATE_CLASS_MEASUREMENT,
         ),
@@ -106,19 +105,22 @@ CONFIG_SCHEMA = cv.Schema(
             state_class=STATE_CLASS_MEASUREMENT,
         ),
         cv.Optional(CONF_START_TIME): sensor.sensor_schema(
-            unit_of_measurement=UNIT_SECOND,
+            # The app exposes protocol values but does not establish seconds
+            # or another physical time unit; T03 publishes the normalized
+            # contract's explicit protocol-tick unit instead of mislabelling it.
+            unit_of_measurement=UNIT_EMPTY,
             accuracy_decimals=0,
             device_class=DEVICE_CLASS_EMPTY,
             state_class=STATE_CLASS_MEASUREMENT,
         ),
         cv.Optional(CONF_AUTO_TIME): sensor.sensor_schema(
-            unit_of_measurement=UNIT_SECOND,
+            unit_of_measurement=UNIT_EMPTY,
             accuracy_decimals=0,
             device_class=DEVICE_CLASS_EMPTY,
             state_class=STATE_CLASS_MEASUREMENT,
         ),
         cv.Optional(CONF_RUN_TIME): sensor.sensor_schema(
-            unit_of_measurement=UNIT_SECOND,
+            unit_of_measurement=UNIT_EMPTY,
             accuracy_decimals=0,
             device_class=DEVICE_CLASS_EMPTY,
             state_class=STATE_CLASS_MEASUREMENT,

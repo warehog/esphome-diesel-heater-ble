@@ -1,0 +1,7 @@
+substitutions:
+  test_name: dh-min-aa55-plain-time
+  build_path: /tmp/diesel-heater-esphome-minimal-aa55-plain-time
+  protocol: aa55_plain
+packages:
+  fixture: !include fixtures/matrix/minimal.yaml
+  clock: !include fixtures/matrix/time.yaml

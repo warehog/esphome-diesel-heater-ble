@@ -1,0 +1,7 @@
+substitutions:
+  test_name: dh-min-aa66-plain
+  build_path: /tmp/diesel-heater-esphome-minimal-aa66-plain
+  protocol: aa66_plain
+
+packages:
+  fixture: !include fixtures/matrix/minimal.yaml

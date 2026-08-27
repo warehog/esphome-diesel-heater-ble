@@ -1,0 +1,6 @@
+substitutions:
+  test_name: dh-full-aa66-plain
+  build_path: /tmp/diesel-heater-esphome-full-aa66-plain
+  protocol: aa66_plain
+packages:
+  fixture: !include fixtures/matrix/full.yaml

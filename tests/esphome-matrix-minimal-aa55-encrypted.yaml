@@ -1,0 +1,7 @@
+substitutions:
+  test_name: dh-min-aa55-encrypted
+  build_path: /tmp/diesel-heater-esphome-minimal-aa55-encrypted
+  protocol: aa55_encrypted
+
+packages:
+  fixture: !include fixtures/matrix/minimal.yaml

@@ -1,0 +1,11 @@
+esphome:
+  name: dh-invalid-time-id-test
+esp32:
+  board: lolin32_lite
+  framework: {type: esp-idf}
+external_components:
+  - source: {type: local, path: ../components}
+    components: [diesel_heater_ble]
+esp32_ble_tracker:
+ble_client: {id: heater_ble_client, mac_address: "02:00:00:00:00:01"}
+diesel_heater_ble: {ble_client_id: heater_ble_client, time_id: missing_clock}

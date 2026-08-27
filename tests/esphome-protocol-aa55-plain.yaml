@@ -1,0 +1,20 @@
+esphome:
+  name: diesel-heater-aa55-plain-test
+  build_path: /tmp/diesel-heater-esphome-aa55-plain
+esp32:
+  board: lolin32_lite
+  variant: esp32
+  framework: {type: esp-idf}
+logger:
+external_components:
+  - source: {type: local, path: ../components}
+    components: [diesel_heater_ble]
+esp32_ble_tracker:
+ble_client:
+  id: heater_ble_client
+  mac_address: "02:00:00:00:00:01"
+diesel_heater_ble:
+  id: heater
+  ble_client_id: heater_ble_client
+  protocol: aa55_plain
+  passkey: 1

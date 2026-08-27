@@ -1,15 +1,18 @@
 #pragma once
 
-#ifdef USE_ESP32
+#if defined(USE_ESP32) && defined(USE_CLIMATE)
 
 #include "esphome/components/climate/climate.h"
 #include "esphome/core/component.h"
+
+#include "state.h"
+#include "climate_session.h"
+#include "entity_control.h"
 
 namespace esphome {
 namespace diesel_heater_ble {
 
 class DieselHeaterBLE;
-struct HeaterState;
 
 class DieselHeaterClimate : public climate::Climate, public Component {
  public:
@@ -19,6 +22,8 @@ class DieselHeaterClimate : public climate::Climate, public Component {
   void setup() override;
   void loop() override;
   void sync_from_heater(const HeaterState &state);
+  void on_heater_disconnect();
+  void on_control_delivery(uint32_t transaction_id, bool success);
 
   void set_heater(DieselHeaterBLE *heater) { this->heater_ = heater; }
 
@@ -51,28 +56,19 @@ class DieselHeaterClimate : public climate::Climate, public Component {
   /// user HEAT requests and bypass_timers is used for user-driven changes.
   void apply_external_control_(bool force_start_request, bool bypass_timers);
   bool refresh_using_external_(uint32_t now);
-  bool is_heating_step_(uint8_t running_step) const { return running_step == 2 || running_step == 3; }
+  bool climate_strategy_ready_(ClimateStrategy strategy, const char *context) const;
+  float control_target_temperature_() const;
+  bool begin_control_(const ClimateAutomationIntent &candidate);
+  bool accept_control_(EntityCommandResult result);
+  void commit_control_();
 
-  DieselHeaterBLE *heater_;
+  DieselHeaterBLE *heater_{nullptr};
 
   // External temperature control state
-  float external_temperature_{NAN};
   uint32_t ext_temp_timeout_ms_{2 * 60 * 60 * 1000};  // default 2 hours; override via YAML
   uint32_t ext_temp_timeout_heating_ms_{15 * 60 * 1000};  // default 15 minutes; override via YAML
-  uint32_t last_ext_temp_ms_{0};                 // 0 = never received
-  uint32_t last_level_update_ms_{0};
   bool ext_temp_fahrenheit_{false};
-  // Primary state axes:
-  // using_external_: external sensor freshness/availability state.
-  // auto_requested_: user intent for auto vs manual-level control.
   bool using_external_{false};
-  bool auto_requested_{true};
-  // Separate climate on/off intent so mode persistence is decoupled from auto/manual preference.
-  bool climate_heat_requested_{false};
-
-  uint8_t last_commanded_level_{1};
-  uint32_t last_heat_transition_ms_{0};
-  uint32_t overshoot_start_ms_{0};
 
   // Staged external-auto parameters.
   float ext_stage_gain_{2.0f};
@@ -82,9 +78,11 @@ class DieselHeaterClimate : public climate::Climate, public Component {
   uint32_t ext_min_off_time_ms_{20 * 60 * 1000};
   uint32_t ext_overshoot_hold_ms_{3 * 60 * 1000};
   uint32_t ext_level_update_interval_ms_{10 * 1000};
+  ClimateFanSession fan_session_{};
+  ClimateControlRuntime control_runtime_{};
 };
 
 }  // namespace diesel_heater_ble
 }  // namespace esphome
 
-#endif  // USE_ESP32
+#endif  // USE_ESP32 && USE_CLIMATE
